@@ -65,6 +65,8 @@ MinIO và lưu Novel/Chapter vào PostgreSQL. Phase 2 bổ sung chunking
  summaries, lexical reranking, context budget và temporal filtering.
  Phase 10 bổ sung translation context theo priority, locked glossary, addressing
  rules và lưu output versioned qua TranslationStore.
+ Phase 11 bổ sung deterministic QA cho empty output, paragraph, number, name,
+ glossary, markup và length anomaly, cùng repair loop có history.
 
 ## Kilo project configuration
 
