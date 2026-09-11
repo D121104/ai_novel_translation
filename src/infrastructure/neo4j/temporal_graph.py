@@ -8,6 +8,7 @@ from neo4j import Driver, GraphDatabase
 from src.core.config import Settings
 from src.knowledge.temporal import TemporalRelation
 
+_LABEL_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 _RELATION_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
 ResultT = TypeVar("ResultT")
 
@@ -19,7 +20,8 @@ class TemporalGraph:
         self._settings = settings
 
     async def sync_node(self, entity_id: str, label: str, properties: dict[str, Any]) -> None:
-        _validate_label(label)
+        if not _LABEL_RE.fullmatch(label):
+            raise ValueError("Neo4j labels must be valid identifiers")
 
         def write(driver: Driver) -> None:
             with driver.session() as session:
@@ -32,7 +34,8 @@ class TemporalGraph:
         await self._run(write)
 
     async def sync_relation(self, relation: TemporalRelation) -> None:
-        _validate_label(relation.relation_type)
+        if not _RELATION_RE.fullmatch(relation.relation_type):
+            raise ValueError("Neo4j relationship types must be uppercase identifiers")
 
         def write(driver: Driver) -> None:
             with driver.session() as session:
@@ -79,8 +82,3 @@ class TemporalGraph:
         return await asyncio.wait_for(
             asyncio.to_thread(execute), self._settings.health_timeout_seconds
         )
-
-
-def _validate_label(label: str) -> None:
-    if not _RELATION_RE.fullmatch(label):
-        raise ValueError("Neo4j labels and relationship types must be uppercase identifiers")
