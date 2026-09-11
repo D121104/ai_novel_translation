@@ -59,6 +59,8 @@ MinIO và lưu Novel/Chapter vào PostgreSQL. Phase 2 bổ sung chunking
  synchronization và truy vấn relationship có `as_of_order`, chặn future state.
  Phase 7 bổ sung Qdrant collections cho chunks, translation memory và summaries,
  deterministic embeddings, sparse terms, hybrid fusion và temporal payload filter.
+ Phase 8 bổ sung hierarchy summary chapter/arc/volume/world bible, gồm narrative
+ và structured facts, với truy vấn bounded và loại bỏ summary tương lai.
 
 ## Kilo project configuration
 
