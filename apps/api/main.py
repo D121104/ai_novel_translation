@@ -48,6 +48,7 @@ from src.infrastructure.postgres.repository import (
 )
 from src.infrastructure.qdrant.health import check as qdrant_check
 from src.infrastructure.redis.health import check as redis_check
+from src.ingestion.storage import MinioStorage
 from src.knowledge.extractor import KnowledgeExtractor
 from src.knowledge.pipeline import PostgresKnowledgeStage
 from src.llm.provider import create_provider
@@ -141,7 +142,6 @@ async def import_novel(request: Request, filename: str = "novel.txt") -> dict[st
         await create_schema(engine)
         async with sessions() as session:
             from src.ingestion.service import ImportService
-            from src.ingestion.storage import MinioStorage
 
             report = await ImportService(
                 PostgresNovelRepository(session), MinioStorage(settings)
@@ -586,6 +586,19 @@ async def export_novel(
             novel = await session.scalar(query)
             if novel is None:
                 raise HTTPException(status_code=404, detail="novel not found")
+            source_path = next(
+                (
+                    chapter.source_text_path
+                    for chapter in novel.chapters
+                    if chapter.source_text_path
+                ),
+                None,
+            )
+            source_epub = (
+                await MinioStorage(get_settings()).get(source_path)
+                if format == "epub" and source_path
+                else None
+            )
             chapters = []
             for chapter in sorted(novel.chapters, key=lambda item: item.chapter_index):
                 translations = [
@@ -622,6 +635,7 @@ async def export_novel(
                 novel.source_language,
                 novel.target_language,
                 tuple(chapters),
+                source_epub,
             )
             exporters = {"txt": export_txt, "json": export_json, "epub": export_epub}
             content = exporters[format](export, bilingual=bilingual)

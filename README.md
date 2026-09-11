@@ -156,6 +156,11 @@ Nếu QA thất bại, API trả `422` cùng mã lỗi và danh sách issue (ví
 `wrong_number`) thay vì lỗi server chung. Các unit đã hoàn thành được giữ lại;
 nhấn `Retry failed` hoặc gọi endpoint `retry-failed` để chạy lại unit lỗi.
 
+Khi export EPUB từ EPUB gốc, hệ thống giữ nguyên archive assets và XHTML
+(bao gồm ảnh, CSS, font, cover, style và vị trí tuyệt đối), chỉ thay text node
+của chapter đã có bản dịch. EPUB nguồn được đọc lại từ MinIO theo
+`source_text_path`.
+
 ## Database initialization và migrations
 
 Mặc định, local API không tự khởi tạo toàn bộ infrastructure khi startup.
