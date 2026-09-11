@@ -42,6 +42,17 @@ uv run ruff format --check .
 uv run mypy apps src
 ```
 
+Chạy UI:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+UI mặc định gọi API tại `http://localhost:8000`; có thể đổi bằng
+`VITE_API_URL`.
+
 Các volume Docker là named volumes và không bị xóa bởi lệnh khởi động.
 
 ## Phạm vi hiện tại
@@ -71,6 +82,8 @@ MinIO và lưu Novel/Chapter vào PostgreSQL. Phase 2 bổ sung chunking
  retry và idempotency key.
  Phase 13 bổ sung API versioned `/api/v1/novels` và chapter pagination với
  Pydantic response validation, cùng endpoint import hiện có.
+ Phase 14 bổ sung React/Vite management UI cho library, import novel và chapter
+ browsing.
 
 ## Kilo project configuration
 
