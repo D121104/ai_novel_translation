@@ -3,14 +3,16 @@ from contextlib import asynccontextmanager
 from typing import Any
 from uuid import UUID
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import func, select
+from sqlalchemy.orm import selectinload
 
 from apps.api.schemas import ChapterResponse, NovelResponse, Paginated, ReviewAction
 from src.core.config import get_settings
 from src.core.logging import configure_logging
-from src.domain.novel.models import AuditLog, Chapter, Novel
+from src.domain.novel.models import AuditLog, Chapter, Novel, TranslationUnit
+from src.exporter.formats import ExportChapter, ExportNovel, export_epub, export_json, export_txt
 from src.infrastructure.health import check_dependencies
 from src.infrastructure.minio.health import check as minio_check
 from src.infrastructure.neo4j.health import check as neo4j_check
@@ -152,5 +154,58 @@ async def review_action(action: ReviewAction) -> dict[str, str]:
             session.add(AuditLog(**action.model_dump()))
             await session.commit()
         return {"status": "recorded", "action": action.action}
+    finally:
+        await engine.dispose()
+
+
+@app.get("/api/v1/novels/{novel_id}/export", tags=["export"])
+async def export_novel(
+    novel_id: UUID,
+    format: str = Query("txt", pattern="^(txt|json|epub)$"),
+    bilingual: bool = False,
+) -> Response:
+    engine, sessions = session_factory(get_settings())
+    try:
+        async with sessions() as session:
+            query = (
+                select(Novel)
+                .options(
+                    selectinload(Novel.chapters)
+                    .selectinload(Chapter.units)
+                    .selectinload(TranslationUnit.translations)
+                )
+                .where(Novel.id == novel_id)
+            )
+            novel = await session.scalar(query)
+            if novel is None:
+                raise HTTPException(status_code=404, detail="novel not found")
+            chapters = []
+            for chapter in sorted(novel.chapters, key=lambda item: item.chapter_index):
+                translations = [
+                    translation for unit in chapter.units for translation in unit.translations
+                ]
+                latest = (
+                    max(translations, key=lambda item: item.version).translated_text
+                    if translations
+                    else None
+                )
+                chapters.append(
+                    ExportChapter(chapter.chapter_index, chapter.title, chapter.source_text, latest)
+                )
+            export = ExportNovel(
+                novel.title,
+                novel.author,
+                novel.source_language,
+                novel.target_language,
+                tuple(chapters),
+            )
+            exporters = {"txt": export_txt, "json": export_json, "epub": export_epub}
+            content = exporters[format](export, bilingual=bilingual)
+            media_types = {
+                "txt": "text/plain",
+                "json": "application/json",
+                "epub": "application/epub+zip",
+            }
+            return Response(content, media_type=media_types[format])
     finally:
         await engine.dispose()
