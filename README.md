@@ -57,6 +57,8 @@ MinIO và lưu Novel/Chapter vào PostgreSQL. Phase 2 bổ sung chunking
  theo exact alias, normalized/fuzzy matching và ngưỡng an toàn, không tự merge
  candidate confidence thấp hoặc ambiguous. Phase 6 bổ sung Neo4j temporal graph
  synchronization và truy vấn relationship có `as_of_order`, chặn future state.
+ Phase 7 bổ sung Qdrant collections cho chunks, translation memory và summaries,
+ deterministic embeddings, sparse terms, hybrid fusion và temporal payload filter.
 
 ## Kilo project configuration
 
