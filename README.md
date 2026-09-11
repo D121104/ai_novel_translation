@@ -89,9 +89,40 @@ MinIO và lưu Novel/Chapter vào PostgreSQL. Phase 2 bổ sung chunking
  Phase 16 bổ sung dependency index cho entity/fact/glossary/memory và stale
  planning chỉ nhắm tới các TranslationUnit bị ảnh hưởng.
  Phase 17 bổ sung export TXT/JSON/EPUB, tùy chọn bilingual và API download
- `/api/v1/novels/{id}/export`, giữ thứ tự chapter và metadata.
- Phase 18 bổ sung evaluation metrics cho entity accuracy, relation F1,
- Recall@K, terminology consistency, hallucination/omission, tốc độ và chi phí.
+  `/api/v1/novels/{id}/export`, giữ thứ tự chapter và metadata.
+  Phase 18 bổ sung evaluation metrics cho entity accuracy, relation F1,
+  Recall@K, terminology consistency, hallucination/omission, tốc độ và chi phí.
+  Phase 19 bổ sung batch embedding/upsert, cache có TTL và giới hạn kích thước,
+  controlled concurrency, PostgreSQL/Neo4j/Qdrant indexes, connection pooling
+  và benchmark async reproducible.
+  Phase 20 bổ sung migration tracking, graceful resource shutdown, process metrics,
+  disk-space status, bounded dead-letter queue và lệnh backup/restore an toàn.
+
+## Performance benchmark
+
+Các primitive hiệu năng có thể benchmark độc lập, không gọi LLM hay xóa dữ liệu:
+
+```python
+from src.core.performance import benchmark_async
+```
+
+`gather_limited` bắt buộc giới hạn concurrency; `AsyncTTLCache` chỉ dành cho
+read/cache tạm thời, không thay thế canonical state. Chạy benchmark/test bằng
+`uv run python benchmarks/performance.py` và `uv run pytest tests/unit/test_performance.py`.
+
+## Recovery drill
+
+1. Tạo thư mục backup riêng và chạy `BackupPlan.postgres_command` với DSN lấy từ
+   biến môi trường; không ghi DSN vào log hoặc commit.
+2. Xác minh file custom dump tồn tại và có kích thước hợp lý.
+3. Trên database tạm, chạy `BackupPlan.restore_command`, rồi kiểm tra số novel,
+   chapter và translation bằng SQL read-only.
+4. Chỉ sau khi xác minh mới dùng dump để khôi phục database chính. Object files
+   MinIO phải được sao lưu riêng; không xóa Docker volumes trong drill.
+
+Bật `RUN_MIGRATIONS_ON_STARTUP=true` để chạy migration có version tracking.
+`/metrics` hiển thị counters process-local và cảnh báo disk; đây không phải
+thay thế backup hoặc monitoring ngoài tiến trình.
 
 ## Kilo project configuration
 

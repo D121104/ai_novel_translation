@@ -4,7 +4,17 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    JSON,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -29,7 +39,10 @@ class Novel(Base):
 
 class Chapter(Base):
     __tablename__ = "chapters"
-    __table_args__ = (UniqueConstraint("novel_id", "chapter_index"),)
+    __table_args__ = (
+        UniqueConstraint("novel_id", "chapter_index"),
+        Index("ix_chapters_novel_status", "novel_id", "status"),
+    )
     id: Mapped[UUID] = mapped_column(PostgresUUID(as_uuid=True), primary_key=True, default=uuid4)
     novel_id: Mapped[UUID] = mapped_column(ForeignKey("novels.id", ondelete="CASCADE"))
     chapter_index: Mapped[int] = mapped_column(Integer)
@@ -45,7 +58,11 @@ class Chapter(Base):
 
 class TranslationUnit(Base):
     __tablename__ = "translation_units"
-    __table_args__ = (UniqueConstraint("chapter_id", "unit_index"),)
+    __table_args__ = (
+        UniqueConstraint("chapter_id", "unit_index"),
+        Index("ix_translation_units_chapter_status", "chapter_id", "status"),
+        Index("ix_translation_units_source_order", "chapter_id", "source_order"),
+    )
     id: Mapped[UUID] = mapped_column(PostgresUUID(as_uuid=True), primary_key=True, default=uuid4)
     chapter_id: Mapped[UUID] = mapped_column(ForeignKey("chapters.id", ondelete="CASCADE"))
     unit_index: Mapped[int] = mapped_column(Integer)

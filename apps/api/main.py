@@ -11,12 +11,15 @@ from sqlalchemy.orm import selectinload
 from apps.api.schemas import ChapterResponse, NovelResponse, Paginated, ReviewAction
 from src.core.config import get_settings
 from src.core.logging import configure_logging
+from src.core.operations import Metrics, disk_status
 from src.domain.novel.models import AuditLog, Chapter, Novel, TranslationUnit
 from src.exporter.formats import ExportChapter, ExportNovel, export_epub, export_json, export_txt
 from src.infrastructure.health import check_dependencies
 from src.infrastructure.minio.health import check as minio_check
 from src.infrastructure.neo4j.health import check as neo4j_check
+from src.infrastructure.neo4j.temporal_graph import TemporalGraph
 from src.infrastructure.postgres.health import check as postgres_check
+from src.infrastructure.postgres.migrations import apply_migrations
 from src.infrastructure.postgres.repository import (
     PostgresNovelRepository,
     create_schema,
@@ -24,12 +27,34 @@ from src.infrastructure.postgres.repository import (
 )
 from src.infrastructure.qdrant.health import check as qdrant_check
 from src.infrastructure.redis.health import check as redis_check
+from src.retrieval.memory import QdrantMemory
+
+metrics = Metrics()
 
 
 @asynccontextmanager
-async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    configure_logging(get_settings().log_level)
-    yield
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    settings = get_settings()
+    configure_logging(settings.log_level)
+    if not (settings.performance_initialize_on_startup or settings.run_migrations_on_startup):
+        yield
+        return
+
+    engine, _sessions = session_factory(settings)
+    graph = TemporalGraph(settings)
+    memory = QdrantMemory(settings)
+    try:
+        if settings.run_migrations_on_startup:
+            await create_schema(engine)
+            await apply_migrations(engine)
+        if settings.performance_initialize_on_startup:
+            await graph.ensure_indexes()
+            await memory.ensure_collections()
+        yield
+    finally:
+        await memory.close()
+        await graph.close()
+        await engine.dispose()
 
 
 app = FastAPI(title=get_settings().app_name, lifespan=lifespan)
@@ -44,6 +69,12 @@ app.add_middleware(
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/metrics")
+async def metrics_endpoint() -> dict[str, object]:
+    disk = disk_status(".", minimum_free_bytes=get_settings().disk_alert_min_free_bytes)
+    return {"counters": metrics.snapshot(), "disk": disk.__dict__}
 
 
 @app.get("/ready")

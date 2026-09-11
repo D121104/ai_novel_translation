@@ -18,6 +18,32 @@ class TemporalGraph:
 
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
+        self._driver = GraphDatabase.driver(
+            settings.neo4j_uri,
+            auth=(settings.neo4j_user, settings.neo4j_password.get_secret_value()),
+            max_connection_pool_size=settings.neo4j_max_connection_pool_size,
+        )
+
+    async def ensure_indexes(self, relation_types: tuple[str, ...] = ()) -> None:
+        """Create idempotent lookup indexes used by temporal graph queries."""
+
+        def write(driver: Driver) -> None:
+            with driver.session() as session:
+                session.run(
+                    "CREATE INDEX entity_id_lookup IF NOT EXISTS FOR (node) ON (node.entity_id)"
+                ).consume()
+                for relation_type in relation_types:
+                    if not _RELATION_RE.fullmatch(relation_type):
+                        raise ValueError("Neo4j relationship types must be uppercase identifiers")
+                    session.run(
+                        f"CREATE INDEX relation_{relation_type.lower()}_id_lookup IF NOT EXISTS "
+                        f"FOR ()-[edge:{relation_type}]-() ON (edge.relation_id)"
+                    ).consume()
+
+        await self._run(write)
+
+    async def close(self) -> None:
+        await asyncio.to_thread(self._driver.close)
 
     async def sync_node(self, entity_id: str, label: str, properties: dict[str, Any]) -> None:
         if not _LABEL_RE.fullmatch(label):
@@ -70,14 +96,7 @@ class TemporalGraph:
 
     async def _run(self, operation: Callable[[Driver], ResultT]) -> ResultT:
         def execute() -> ResultT:
-            driver = GraphDatabase.driver(
-                self._settings.neo4j_uri,
-                auth=(self._settings.neo4j_user, self._settings.neo4j_password.get_secret_value()),
-            )
-            try:
-                return operation(driver)
-            finally:
-                driver.close()
+            return operation(self._driver)
 
         return await asyncio.wait_for(
             asyncio.to_thread(execute), self._settings.health_timeout_seconds

@@ -1,4 +1,4 @@
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -58,8 +58,22 @@ class PostgresTranslationStore:
 async def create_schema(engine: AsyncEngine) -> None:
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
+        for index in (
+            "CREATE INDEX IF NOT EXISTS ix_chapters_novel_status ON chapters (novel_id, status)",
+            "CREATE INDEX IF NOT EXISTS ix_translation_units_chapter_status "
+            "ON translation_units (chapter_id, status)",
+            "CREATE INDEX IF NOT EXISTS ix_translation_units_source_order "
+            "ON translation_units (chapter_id, source_order)",
+        ):
+            await connection.execute(text(index))
 
 
 def session_factory(settings: Settings) -> tuple[AsyncEngine, async_sessionmaker[AsyncSession]]:
-    engine = create_async_engine(settings.postgres_dsn, pool_pre_ping=True)
+    engine = create_async_engine(
+        settings.postgres_dsn,
+        pool_pre_ping=True,
+        pool_size=settings.postgres_pool_size,
+        max_overflow=settings.postgres_max_overflow,
+        pool_timeout=settings.postgres_pool_timeout_seconds,
+    )
     return engine, async_sessionmaker(engine, expire_on_commit=False)

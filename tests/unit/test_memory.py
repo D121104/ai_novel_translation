@@ -7,6 +7,7 @@ from src.retrieval.memory import HashEmbedder, hybrid_fusion, sparse_terms
 async def test_hash_embedding_is_deterministic() -> None:
     embedder = HashEmbedder(8)
     assert await embedder.embed("Lan enters") == await embedder.embed("Lan enters")
+    assert await embedder.embed_many(["Lan enters"]) == [await embedder.embed("Lan enters")]
 
 
 def test_sparse_and_hybrid_fusion() -> None:

@@ -18,9 +18,13 @@ class Settings(BaseSettings):
     postgres_db: str = "novel_translator"
     postgres_user: str = "novel"
     postgres_password: SecretStr = SecretStr("novel_dev_password")
+    postgres_pool_size: int = 5
+    postgres_max_overflow: int = 10
+    postgres_pool_timeout_seconds: float = 30.0
     neo4j_uri: str = "bolt://localhost:7687"
     neo4j_user: str = "neo4j"
     neo4j_password: SecretStr = SecretStr("neo4j_dev_password")
+    neo4j_max_connection_pool_size: int = 50
     qdrant_url: str = "http://localhost:6333"
     qdrant_api_key: SecretStr | None = None
     redis_url: str = "redis://localhost:6379/0"
@@ -37,6 +41,11 @@ class Settings(BaseSettings):
     llm_max_retries: int = 2
     celery_broker_url: str = "redis://localhost:6379/0"
     celery_result_backend: str = "redis://localhost:6379/1"
+    performance_cache_ttl_seconds: float = 300.0
+    performance_concurrency_limit: int = 4
+    performance_initialize_on_startup: bool = False
+    run_migrations_on_startup: bool = False
+    disk_alert_min_free_bytes: int = 1_073_741_824
 
     @property
     def postgres_dsn(self) -> str:
