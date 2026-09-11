@@ -63,6 +63,8 @@ MinIO và lưu Novel/Chapter vào PostgreSQL. Phase 2 bổ sung chunking
  và structured facts, với truy vấn bounded và loại bỏ summary tương lai.
  Phase 9 bổ sung GraphRAG orchestration kết hợp graph expansion, Qdrant vectors,
  summaries, lexical reranking, context budget và temporal filtering.
+ Phase 10 bổ sung translation context theo priority, locked glossary, addressing
+ rules và lưu output versioned qua TranslationStore.
 
 ## Kilo project configuration
 

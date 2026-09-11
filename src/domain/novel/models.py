@@ -53,3 +53,17 @@ class TranslationUnit(Base):
     token_count: Mapped[int] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(30), default="pending")
     chapter: Mapped[Chapter] = relationship(back_populates="units")
+    translations: Mapped[list[Translation]] = relationship(
+        back_populates="unit", cascade="all, delete-orphan"
+    )
+
+
+class Translation(Base):
+    __tablename__ = "translations"
+    __table_args__ = (UniqueConstraint("unit_id", "version"),)
+    id: Mapped[UUID] = mapped_column(PostgresUUID(as_uuid=True), primary_key=True, default=uuid4)
+    unit_id: Mapped[UUID] = mapped_column(ForeignKey("translation_units.id", ondelete="CASCADE"))
+    version: Mapped[int] = mapped_column(Integer)
+    translated_text: Mapped[str] = mapped_column(Text)
+    model: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    unit: Mapped[TranslationUnit] = relationship(back_populates="translations")

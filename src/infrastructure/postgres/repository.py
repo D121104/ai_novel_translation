@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import (
 
 from src.chunking.chunker import chunk_text
 from src.core.config import Settings
-from src.domain.novel.models import Base, Chapter, Novel, TranslationUnit
+from src.domain.novel.models import Base, Chapter, Novel, Translation, TranslationUnit
 from src.ingestion.parser import ParsedNovel
 from src.ingestion.service import NovelRepository
 
@@ -44,6 +44,15 @@ class PostgresNovelRepository(NovelRepository):
         self._session.add(record)
         await self._session.commit()
         return str(record.id)
+
+
+class PostgresTranslationStore:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def save(self, unit_id: str, text: str, version: int) -> None:
+        self._session.add(Translation(unit_id=unit_id, translated_text=text, version=version))
+        await self._session.commit()
 
 
 async def create_schema(engine: AsyncEngine) -> None:
