@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     llm_api_key: SecretStr | None = None
     llm_timeout_seconds: float = 120.0
     llm_max_retries: int = 2
+    celery_broker_url: str = "redis://localhost:6379/0"
+    celery_result_backend: str = "redis://localhost:6379/1"
 
     @property
     def postgres_dsn(self) -> str:

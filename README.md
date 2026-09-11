@@ -67,6 +67,8 @@ MinIO và lưu Novel/Chapter vào PostgreSQL. Phase 2 bổ sung chunking
  rules và lưu output versioned qua TranslationStore.
  Phase 11 bổ sung deterministic QA cho empty output, paragraph, number, name,
  glossary, markup và length anomaly, cùng repair loop có history.
+ Phase 12 bổ sung Celery/Redis configuration và resumable worker với checkpoint,
+ retry và idempotency key.
 
 ## Kilo project configuration
 
