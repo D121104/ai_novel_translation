@@ -1,0 +1,184 @@
+# AI Novel Translation Studio
+
+Foundation (Phase 0) của ứng dụng dịch tiểu thuyết cá nhân.
+
+## Chạy local
+
+Yêu cầu Python 3.12, `uv`, và Docker Desktop.
+
+```bash
+Copy-Item .env.example .env
+uv sync
+docker compose up -d
+uv run uvicorn apps.api.main:app --reload
+```
+
+Kiểm tra:
+
+```bash
+curl http://localhost:8000/health
+curl http://localhost:8000/ready
+```
+
+`/health` không phụ thuộc hạ tầng. `/ready` kiểm tra PostgreSQL, Neo4j,
+Qdrant, Redis và MinIO; nếu một dịch vụ tắt, endpoint trả HTTP 503 và nêu
+dịch vụ lỗi.
+
+Quality gates:
+
+```bash
+uv run pytest
+uv run ruff check .
+uv run ruff format --check .
+uv run mypy apps src
+```
+
+Các volume Docker là named volumes và không bị xóa bởi lệnh khởi động.
+
+## Phạm vi hiện tại
+
+Phase 0 chỉ cung cấp skeleton, cấu hình, logging, health checks và local
+infrastructure. Domain novel, ingestion, LLM, retrieval, workers và UI sẽ
+được triển khai ở các phase sau.
+
+## Kilo project configuration
+
+Bộ này dành cho project **AI Novel Translation Studio** cá nhân.
+
+Mục tiêu:
+- ít agent;
+- phân vai rõ;
+- không over-engineering;
+- kiểm soát chi phí;
+- không để agent tự spawn lung tung;
+- giữ đúng Temporal Knowledge + PostgreSQL/Neo4j/Qdrant architecture.
+
+## Agents
+
+```text
+novel-engineer            PRIMARY
+├── knowledge-engineer    SUBAGENT
+├── translation-engineer  SUBAGENT
+└── reviewer              SUBAGENT
+```
+
+### novel-engineer
+Agent chính để bạn giao Phase/task.
+
+Nó có thể:
+- đọc/sửa project;
+- chạy test;
+- gọi đúng 3 subagent;
+- điều phối implementation.
+
+Nó không được:
+- gọi agent bất kỳ ngoài allowlist;
+- dùng Agent Manager;
+- tự chạy lệnh phá dữ liệu.
+
+### knowledge-engineer
+Chuyên:
+- PostgreSQL
+- Neo4j
+- Qdrant
+- entity/alias/identity
+- temporal knowledge
+- GraphRAG/retrieval
+
+### translation-engineer
+Chuyên:
+- translation pipeline
+- context builder
+- prompt
+- glossary
+- pronoun/addressing
+- model routing
+- QA/repair
+- translation memory
+
+### reviewer
+Read-only reviewer:
+- xem diff;
+- chạy test/lint/type-check;
+- tìm bug/regression;
+- không sửa file.
+
+## Rules
+
+```text
+.kilo/rules/
+├── 00-project-scope.md
+├── 10-architecture.md
+├── 20-coding.md
+├── 30-testing.md
+├── 40-agent-workflow.md
+└── 50-translation-quality.md
+```
+
+## Cài đặt
+
+Copy:
+- `.kilo/agents/`
+- `.kilo/rules/`
+- `AGENTS.md`
+
+vào root project.
+
+Sau đó merge phần `instructions` từ `kilo.jsonc.example` vào `kilo.jsonc`
+hiện tại của bạn. **Không ghi đè provider/model config đang dùng.**
+
+Ví dụ:
+
+```jsonc
+{
+  "$schema": "https://app.kilo.ai/config.json",
+  "instructions": [
+    "AGENTS.md",
+    ".kilo/rules/*.md"
+  ]
+}
+```
+
+Kilo tự phát hiện agent Markdown trong `.kilo/agents/`.
+
+Sau khi copy:
+- mở session mới; hoặc
+- reload Kilo nếu client của bạn hỗ trợ reload.
+
+## Cách dùng
+
+Task bình thường:
+
+```text
+@novel-engineer Implement Phase 5 according to PLAN.md.
+```
+
+Task knowledge riêng:
+
+```text
+@knowledge-engineer Review entity resolution and temporal knowledge implementation.
+```
+
+Task translation:
+
+```text
+@translation-engineer Improve context building and translation QA without changing the knowledge schema.
+```
+
+Review:
+
+```text
+@reviewer Review the current diff and run the relevant quality gates. Do not edit files.
+```
+
+## Model
+
+Các agent không pin model cứng để không phá config 9router hiện tại.
+
+Gợi ý:
+- `novel-engineer`: Luna High/Max Fast khi task khó; Medium/High cho task thường.
+- `knowledge-engineer`: Luna High cho GraphRAG/entity resolution khó.
+- `translation-engineer`: Luna Medium/High.
+- `reviewer`: Luna Medium.
+
+Không cần Sol cho workflow phát triển project cá nhân này.

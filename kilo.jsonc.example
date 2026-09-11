@@ -1,0 +1,26 @@
+{
+  "$schema": "https://app.kilo.ai/config.json",
+
+  // Merge these instructions into your EXISTING kilo.jsonc.
+  // Keep your current provider/model configuration.
+  "instructions": [
+    "AGENTS.md",
+    ".kilo/rules/*.md"
+  ],
+
+  // Optional safe project-level defaults.
+  // Agent-specific permissions in .kilo/agents/*.md are more specific.
+  "permission": {
+    "read": {
+      "*": "allow",
+      "*.env": "ask",
+      "*.env.*": "ask",
+      "*.env.example": "allow"
+    },
+    "glob": "allow",
+    "grep": "allow",
+    "external_directory": "ask",
+    "doom_loop": "ask",
+    "agent_manager": "deny"
+  }
+}
