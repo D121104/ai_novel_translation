@@ -53,7 +53,9 @@ MinIO và lưu Novel/Chapter vào PostgreSQL. Phase 2 bổ sung chunking
  retry/timeout, token accounting và response cache. Phase 4 bổ sung knowledge
  extraction candidates có Pydantic validation và evidence bắt buộc gắn với
  TranslationUnit; extractor chỉ trả proposal, không ghi DB. Retrieval, workers
- và UI sẽ được triển khai ở các phase sau.
+ và UI sẽ được triển khai ở các phase sau. Phase 5 bổ sung entity resolution
+ theo exact alias, normalized/fuzzy matching và ngưỡng an toàn, không tự merge
+ candidate confidence thấp hoặc ambiguous.
 
 ## Kilo project configuration
 
