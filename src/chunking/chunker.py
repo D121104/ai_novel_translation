@@ -10,8 +10,29 @@ class TranslationChunk:
     token_count: int
 
 
+def make_story_order(
+    chapter_index: int, unit_index: int, *, chapter_stride: int = 1_000_000
+) -> int:
+    """Build a monotonic novel-wide order from chapter and unit positions."""
+    if chapter_index < 0 or unit_index < 0 or chapter_stride <= unit_index:
+        raise ValueError("story order inputs are outside the configured range")
+    return chapter_index * chapter_stride + unit_index
+
+
 def _tokens(text: str) -> int:
-    return len(re.findall(r"\S+", text))
+    cjk = r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]"
+    cjk_count = len(re.findall(cjk, text))
+    non_cjk = re.sub(cjk, " ", text)
+    return cjk_count + len(re.findall(r"\S+", non_cjk))
+
+
+def _split_oversized(text: str, max_tokens: int) -> list[str]:
+    if re.search(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]", text):
+        return [text[index : index + max_tokens] for index in range(0, len(text), max_tokens)]
+    words = text.split()
+    return [
+        " ".join(words[index : index + max_tokens]) for index in range(0, len(words), max_tokens)
+    ]
 
 
 def chunk_text(
@@ -25,12 +46,18 @@ def chunk_text(
             pieces.append(paragraph)
             continue
         sentences = [
-            part.strip() for part in re.split(r"(?<=[.!?。！？])\s+", paragraph) if part.strip()
+            part.strip() for part in re.split(r"(?<=[.!?。！？])\s*", paragraph) if part.strip()
         ]
         current_sentences: list[str] = []
         count = 0
         for sentence in sentences:
             sentence_count = _tokens(sentence)
+            if sentence_count > max_tokens:
+                if current_sentences:
+                    pieces.append(" ".join(current_sentences))
+                    current_sentences, count = [], 0
+                pieces.extend(_split_oversized(sentence, max_tokens))
+                continue
             if current_sentences and count + sentence_count > max_tokens:
                 pieces.append(" ".join(current_sentences))
                 current_sentences, count = [], 0

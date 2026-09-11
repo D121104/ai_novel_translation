@@ -112,36 +112,117 @@ class QdrantMemory:
             ],
         )
 
+    async def save_source(
+        self,
+        novel_id: str,
+        chapter_id: str,
+        unit_id: str,
+        story_order: int,
+        source_text: str,
+    ) -> None:
+        await self.upsert(
+            "novel_chunks",
+            MemoryPoint(
+                f"source:{unit_id}",
+                source_text,
+                story_order,
+                {
+                    "novel_id": str(novel_id),
+                    "chapter_id": str(chapter_id),
+                    "unit_id": str(unit_id),
+                    "source_order": story_order,
+                },
+            ),
+        )
+
+    async def save_translation(
+        self,
+        novel_id: str,
+        chapter_id: str,
+        unit_id: str,
+        story_order: int,
+        source_text: str,
+        translated_text: str,
+        version: int,
+    ) -> None:
+        await self.upsert(
+            "translation_memory",
+            MemoryPoint(
+                f"translation:{unit_id}:v{version}",
+                translated_text,
+                story_order,
+                {
+                    "novel_id": str(novel_id),
+                    "chapter_id": str(chapter_id),
+                    "unit_id": str(unit_id),
+                    "source_order": story_order,
+                    "source_text": source_text,
+                    "translation_version": version,
+                    "qa_score": 1.0,
+                },
+            ),
+        )
+
+    async def save_summary(
+        self, novel_id: str, summary_id: str, story_order: int, narrative: str
+    ) -> None:
+        await self.upsert(
+            "story_summaries",
+            MemoryPoint(
+                f"summary:{summary_id}",
+                narrative,
+                story_order,
+                {"novel_id": str(novel_id), "summary_id": summary_id},
+            ),
+        )
+
     async def search(
-        self, collection: str, query: str, *, as_of_order: int, limit: int = 10
+        self,
+        collection: str,
+        query: str,
+        *,
+        as_of_order: int,
+        novel_id: str | None = None,
+        limit: int = 10,
     ) -> list[MemoryPoint]:
         if collection not in COLLECTIONS:
             raise ValueError(f"unsupported memory collection: {collection}")
+        conditions: list[Any] = [
+            models.FieldCondition(key="observed_at_order", range=models.Range(lte=as_of_order))
+        ]
+        if novel_id is not None:
+            conditions.append(
+                models.FieldCondition(key="novel_id", match=models.MatchValue(value=str(novel_id)))
+            )
         result = await self._qdrant.query_points(
             collection,
             query=await self._embedder.embed(query),
-            query_filter=models.Filter(
-                must=[
-                    models.FieldCondition(
-                        key="observed_at_order", range=models.Range(lte=as_of_order)
-                    )
-                ]
-            ),
-            limit=limit,
+            query_filter=models.Filter(must=conditions),
+            limit=max(limit * 3, limit),
             with_payload=True,
         )
-        points: list[MemoryPoint] = []
+        candidates: list[tuple[MemoryPoint, float, float]] = []
+        query_terms = sparse_terms(query)
         for point in result.points:
             payload = dict(point.payload or {})
-            points.append(
-                MemoryPoint(
-                    str(point.id),
-                    str(payload.get("text", "")),
-                    int(payload["observed_at_order"]),
-                    payload,
-                )
+            memory_point = MemoryPoint(
+                str(point.id),
+                str(payload.get("text", "")),
+                int(payload["observed_at_order"]),
+                payload,
             )
-        return points
+            point_terms = payload.get("sparse", {})
+            overlap = sum(
+                min(count, int(point_terms.get(term, 0))) for term, count in query_terms.items()
+            )
+            sparse_score = overlap / max(sum(query_terms.values()), 1)
+            candidates.append((memory_point, float(getattr(point, "score", 0.0)), sparse_score))
+        fused = hybrid_fusion(
+            [(point.point_id, dense) for point, dense, _ in candidates],
+            [(point.point_id, sparse) for point, _, sparse in candidates],
+        )
+        by_id = {point.point_id: point for point, _, _ in candidates}
+        return [by_id[point_id] for point_id, _ in fused[:limit]]
 
     def _new_client(self) -> AsyncQdrantClient:
         return AsyncQdrantClient(

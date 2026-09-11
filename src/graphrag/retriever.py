@@ -12,7 +12,13 @@ class GraphReader(Protocol):
 
 class VectorReader(Protocol):
     async def search(
-        self, collection: str, query: str, *, as_of_order: int, limit: int = 10
+        self,
+        collection: str,
+        query: str,
+        *,
+        as_of_order: int,
+        novel_id: str | None = None,
+        limit: int = 10,
     ) -> list[MemoryPoint]: ...
 
 
@@ -45,6 +51,7 @@ class GraphRAGRetriever:
         *,
         entity_ids: list[str],
         as_of_order: int,
+        novel_id: str | None = None,
         summaries: list[StorySummary] | None = None,
         max_items: int = 12,
         max_tokens: int = 4000,
@@ -53,9 +60,25 @@ class GraphRAGRetriever:
         summaries = summaries or []
         for entity_id in entity_ids:
             for relation in await self._graph.active_relations(entity_id, as_of_order):
-                items.append(ContextItem("graph", str(relation), 0.9, as_of_order))
-        for point in await self._vectors.search("novel_chunks", query, as_of_order=as_of_order):
-            items.append(ContextItem("vector", point.text, 0.8, point.story_order))
+                observed_at = int(relation.get("observed_at_order", as_of_order))
+                if observed_at <= as_of_order:
+                    items.append(ContextItem("graph", str(relation), 0.9, observed_at))
+        for collection, kind, visible_order in (
+            ("novel_chunks", "vector", as_of_order),
+            ("translation_memory", "translation_memory", as_of_order - 1),
+        ):
+            if novel_id is None:
+                points = await self._vectors.search(collection, query, as_of_order=visible_order)
+            else:
+                points = await self._vectors.search(
+                    collection,
+                    query,
+                    as_of_order=visible_order,
+                    novel_id=novel_id,
+                )
+            for point in points:
+                if point.story_order <= visible_order:
+                    items.append(ContextItem(kind, point.text, 0.8, point.story_order))
         for summary in visible_summaries(summaries, as_of_order=as_of_order, limit=max_items):
             items.append(ContextItem("summary", summary.narrative, 0.7, summary.end_order))
         ranked = sorted(

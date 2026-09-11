@@ -141,7 +141,20 @@ Các endpoint chính:
 - `GET /api/v1/novels`
 - `GET /api/v1/novels/{novel_id}/chapters`
 - `POST /api/v1/review/actions`
+- `POST /api/v1/chapters/{chapter_id}/translate`
+- `POST /api/v1/chapters/{chapter_id}/retry-failed`
+- `GET /api/v1/chapters/{chapter_id}/translations`
 - `GET /api/v1/novels/{novel_id}/export`
+
+Sau khi import, chọn novel trên UI và bấm `Translate` ở chapter cần chạy.
+Backend sẽ xử lý các unit đang `pending` theo thứ tự source, chạy QA/repair,
+lưu translation version và cập nhật trạng thái chapter. Endpoint hiện chạy
+đồng bộ để phù hợp local workflow; Celery chỉ được dùng cho các job dài hạn
+đã cấu hình riêng.
+
+Nếu QA thất bại, API trả `422` cùng mã lỗi và danh sách issue (ví dụ
+`wrong_number`) thay vì lỗi server chung. Các unit đã hoàn thành được giữ lại;
+nhấn `Retry failed` hoặc gọi endpoint `retry-failed` để chạy lại unit lỗi.
 
 ## Database initialization và migrations
 

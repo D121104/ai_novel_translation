@@ -91,6 +91,7 @@ class OllamaProvider(_BaseProvider):
                         "prompt": prompt,
                         "system": system or "",
                         "stream": False,
+                        "options": {"num_predict": self.settings.llm_max_output_tokens},
                     },
                 )
                 response.raise_for_status()
@@ -121,7 +122,12 @@ class OpenAICompatibleProvider(_BaseProvider):
                 response = await client.post(
                     f"{self.settings.llm_base_url.rstrip('/')}/v1/chat/completions",
                     headers=headers,
-                    json={"model": self.settings.llm_model, "messages": messages, "stream": False},
+                    json={
+                        "model": self.settings.llm_model,
+                        "messages": messages,
+                        "stream": False,
+                        "max_tokens": self.settings.llm_max_output_tokens,
+                    },
                 )
                 response.raise_for_status()
                 payload = response.json()

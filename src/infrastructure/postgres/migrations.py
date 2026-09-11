@@ -12,6 +12,47 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
             ON translation_units (chapter_id, source_order);
         """,
     ),
+    (
+        2,
+        """
+        CREATE INDEX IF NOT EXISTS ix_entities_novel_order
+            ON entities (novel_id, first_seen_order, status);
+        CREATE INDEX IF NOT EXISTS ix_glossary_terms_novel_locked
+            ON glossary_terms (novel_id, locked);
+        CREATE INDEX IF NOT EXISTS ix_translation_jobs_status
+            ON translation_jobs (status, updated_at);
+        CREATE INDEX IF NOT EXISTS ix_translation_qa_results_stage_status
+            ON translation_qa_results (stage, status);
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_knowledge_proposals_unit
+            ON knowledge_proposals (unit_id);
+        CREATE INDEX IF NOT EXISTS ix_story_summaries_novel_order
+            ON story_summaries (novel_id, end_order);
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_novel_translation_jobs_active
+            ON novel_translation_jobs (novel_id) WHERE status IN ('queued', 'running');
+        """,
+    ),
+    (
+        3,
+        """
+        ALTER TABLE translation_units ALTER COLUMN source_order TYPE BIGINT;
+        ALTER TABLE entities ALTER COLUMN first_seen_order TYPE BIGINT;
+        ALTER TABLE entities ALTER COLUMN last_seen_order TYPE BIGINT;
+        ALTER TABLE entity_aliases ALTER COLUMN valid_from_order TYPE BIGINT;
+        ALTER TABLE entity_aliases ALTER COLUMN valid_to_order TYPE BIGINT;
+        ALTER TABLE glossary_terms ALTER COLUMN first_seen_order TYPE BIGINT;
+        ALTER TABLE knowledge_proposals ALTER COLUMN observed_at_order TYPE BIGINT;
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_translation_jobs_active_chapter
+            ON translation_jobs (chapter_id) WHERE status IN ('queued', 'running');
+        """,
+    ),
+    (
+        4,
+        """
+        ALTER TABLE translation_jobs ADD COLUMN IF NOT EXISTS lease_until TIMESTAMPTZ;
+        CREATE INDEX IF NOT EXISTS ix_translation_jobs_lease
+            ON translation_jobs (status, lease_until);
+        """,
+    ),
 )
 
 

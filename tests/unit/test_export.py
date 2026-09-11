@@ -30,3 +30,22 @@ def test_epub_is_readable_and_ordered() -> None:
         assert archive.namelist().index("OEBPS/c1.xhtml") < archive.namelist().index(
             "OEBPS/c2.xhtml"
         )
+
+
+def test_epub_contains_navigation_metadata_and_full_chapter_translation() -> None:
+    item = ExportNovel(
+        "Novel & More",
+        "Author",
+        "en",
+        "vi",
+        (ExportChapter(1, "One", "Source one", "Translation one\n\nTranslation two"),),
+    )
+
+    with zipfile.ZipFile(BytesIO(export_epub(item))) as archive:
+        assert archive.read("OEBPS/nav.xhtml")
+        opf = archive.read("OEBPS/content.opf").decode()
+        chapter = archive.read("OEBPS/c1.xhtml").decode()
+        assert 'version="3.0"' in opf
+        assert "Novel &amp; More" in opf
+        assert "Translation one" in chapter
+        assert "Translation two" in chapter
