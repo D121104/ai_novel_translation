@@ -84,6 +84,8 @@ MinIO và lưu Novel/Chapter vào PostgreSQL. Phase 2 bổ sung chunking
  Pydantic response validation, cùng endpoint import hiện có.
  Phase 14 bổ sung React/Vite management UI cho library, import novel và chapter
  browsing.
+ Phase 15 bổ sung knowledge review actions (confirm/reject/merge/split/lock)
+ và audit log PostgreSQL cho mọi thay đổi review.
 
 ## Kilo project configuration
 

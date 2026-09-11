@@ -7,10 +7,10 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import func, select
 
-from apps.api.schemas import ChapterResponse, NovelResponse, Paginated
+from apps.api.schemas import ChapterResponse, NovelResponse, Paginated, ReviewAction
 from src.core.config import get_settings
 from src.core.logging import configure_logging
-from src.domain.novel.models import Chapter, Novel
+from src.domain.novel.models import AuditLog, Chapter, Novel
 from src.infrastructure.health import check_dependencies
 from src.infrastructure.minio.health import check as minio_check
 from src.infrastructure.neo4j.health import check as neo4j_check
@@ -139,5 +139,18 @@ async def list_chapters(
                 limit=limit,
                 total=total,
             )
+    finally:
+        await engine.dispose()
+
+
+@app.post("/api/v1/review/actions", tags=["review"])
+async def review_action(action: ReviewAction) -> dict[str, str]:
+    engine, sessions = session_factory(get_settings())
+    try:
+        await create_schema(engine)
+        async with sessions() as session:
+            session.add(AuditLog(**action.model_dump()))
+            await session.commit()
+        return {"status": "recorded", "action": action.action}
     finally:
         await engine.dispose()

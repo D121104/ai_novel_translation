@@ -9,6 +9,7 @@ export default function App() {
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [selected, setSelected] = useState<Novel | null>(null);
   const [message, setMessage] = useState("Loading library...");
+  const [reviewId, setReviewId] = useState("");
 
   const loadNovels = async () => {
     const response = await fetch(`${API}/api/v1/novels`);
@@ -35,6 +36,7 @@ export default function App() {
   return <main>
     <header><div><span className="eyebrow">PERSONAL STUDIO</span><h1>Novel Library</h1></div><label className="button">Import novel<input type="file" accept=".txt,.json,.epub" onChange={importFile} /></label></header>
     <p className="status">{message}</p>
+    <section className="review-bar"><div><span className="eyebrow">KNOWLEDGE REVIEW</span><strong>Human review actions</strong><small>Every change is written to the audit log.</small></div><input placeholder="Candidate ID" value={reviewId} onChange={event => setReviewId(event.target.value)} />{["confirm", "reject", "merge", "split", "lock"].map(action => <button disabled={!reviewId} onClick={async () => { const response = await fetch(`${API}/api/v1/review/actions`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, object_type: "entity", object_id: reviewId }) }); setMessage(response.ok ? `Action ${action} recorded` : "Review action failed"); }} key={action}>{action}</button>)}</section>
     <section className="workspace"><aside><h2>Library</h2>{novels.length === 0 && <p className="muted">No novels imported.</p>}{novels.map(novel => <button className={selected?.id === novel.id ? "novel active" : "novel"} onClick={() => chooseNovel(novel)} key={novel.id}><strong>{novel.title}</strong><small>{novel.author ?? "Unknown author"}</small></button>)}</aside>
       <article><div className="panel-head"><div><span className="eyebrow">{selected ? "NOVEL" : "DASHBOARD"}</span><h2>{selected?.title ?? "Select a novel"}</h2></div>{selected && <span className="badge">{selected.target_language}</span>}</div>{selected ? <div className="chapters">{chapters.map(chapter => <div className="chapter" key={chapter.id}><span>{String(chapter.chapter_index).padStart(3, "0")}</span><strong>{chapter.title}</strong><small>{chapter.status}</small></div>)}</div> : <p className="muted">Import a source file to start the translation workflow.</p>}</article>
     </section>
