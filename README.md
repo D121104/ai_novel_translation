@@ -48,8 +48,10 @@ Các volume Docker là named volumes và không bị xóa bởi lệnh khởi đ
 
 Phase 1 bổ sung parser TXT/JSON/EPUB, phát hiện chapter, lưu file gốc vào
 MinIO và lưu Novel/Chapter vào PostgreSQL. Phase 2 bổ sung chunking
-deterministic thành TranslationUnit theo paragraph/sentence boundary. LLM,
-retrieval, workers và UI sẽ được triển khai ở các phase sau.
+ deterministic thành TranslationUnit theo paragraph/sentence boundary. Phase 3
+ bổ sung abstraction LLM cho Ollama/OpenAI-compatible, structured output,
+ retry/timeout, token accounting và response cache. Retrieval, workers và UI sẽ
+ được triển khai ở các phase sau.
 
 ## Kilo project configuration
 

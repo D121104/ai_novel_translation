@@ -29,6 +29,12 @@ class Settings(BaseSettings):
     minio_secret_key: SecretStr = SecretStr("minioadmin123")
     minio_secure: bool = False
     minio_bucket: str = "novels"
+    llm_provider: str = "ollama"
+    llm_model: str = "llama3.2"
+    llm_base_url: str = "http://localhost:11434"
+    llm_api_key: SecretStr | None = None
+    llm_timeout_seconds: float = 120.0
+    llm_max_retries: int = 2
 
     @property
     def postgres_dsn(self) -> str:
