@@ -61,6 +61,8 @@ MinIO và lưu Novel/Chapter vào PostgreSQL. Phase 2 bổ sung chunking
  deterministic embeddings, sparse terms, hybrid fusion và temporal payload filter.
  Phase 8 bổ sung hierarchy summary chapter/arc/volume/world bible, gồm narrative
  và structured facts, với truy vấn bounded và loại bỏ summary tương lai.
+ Phase 9 bổ sung GraphRAG orchestration kết hợp graph expansion, Qdrant vectors,
+ summaries, lexical reranking, context budget và temporal filtering.
 
 ## Kilo project configuration
 
