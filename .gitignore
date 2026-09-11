@@ -2,6 +2,7 @@
 .env.*
 !.env.example
 .kilo/
+novel_translation_engineering_plan/
 .venv/
 __pycache__/
 *.py[cod]
