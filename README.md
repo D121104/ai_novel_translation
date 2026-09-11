@@ -90,6 +90,8 @@ MinIO và lưu Novel/Chapter vào PostgreSQL. Phase 2 bổ sung chunking
  planning chỉ nhắm tới các TranslationUnit bị ảnh hưởng.
  Phase 17 bổ sung export TXT/JSON/EPUB, tùy chọn bilingual và API download
  `/api/v1/novels/{id}/export`, giữ thứ tự chapter và metadata.
+ Phase 18 bổ sung evaluation metrics cho entity accuracy, relation F1,
+ Recall@K, terminology consistency, hallucination/omission, tốc độ và chi phí.
 
 ## Kilo project configuration
 
