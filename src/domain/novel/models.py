@@ -37,3 +37,19 @@ class Chapter(Base):
     source_text: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(30), default="imported")
     novel: Mapped[Novel] = relationship(back_populates="chapters")
+    units: Mapped[list[TranslationUnit]] = relationship(
+        back_populates="chapter", cascade="all, delete-orphan"
+    )
+
+
+class TranslationUnit(Base):
+    __tablename__ = "translation_units"
+    __table_args__ = (UniqueConstraint("chapter_id", "unit_index"),)
+    id: Mapped[UUID] = mapped_column(PostgresUUID(as_uuid=True), primary_key=True, default=uuid4)
+    chapter_id: Mapped[UUID] = mapped_column(ForeignKey("chapters.id", ondelete="CASCADE"))
+    unit_index: Mapped[int] = mapped_column(Integer)
+    source_order: Mapped[int] = mapped_column(Integer)
+    source_text: Mapped[str] = mapped_column(Text)
+    token_count: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(30), default="pending")
+    chapter: Mapped[Chapter] = relationship(back_populates="units")

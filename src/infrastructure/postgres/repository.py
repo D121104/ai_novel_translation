@@ -6,8 +6,9 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
+from src.chunking.chunker import chunk_text
 from src.core.config import Settings
-from src.domain.novel.models import Base, Chapter, Novel
+from src.domain.novel.models import Base, Chapter, Novel, TranslationUnit
 from src.ingestion.parser import ParsedNovel
 from src.ingestion.service import NovelRepository
 
@@ -22,15 +23,24 @@ class PostgresNovelRepository(NovelRepository):
 
     async def save(self, novel: ParsedNovel, source_hash: str, source_path: str) -> str:
         record = Novel(title=novel.title, author=novel.author, source_hash=source_hash)
-        record.chapters = [
-            Chapter(
+        record.chapters = []
+        for chapter in novel.chapters:
+            chapter_record = Chapter(
                 chapter_index=chapter.index,
                 title=chapter.title,
                 source_text=chapter.text,
                 source_text_path=source_path,
             )
-            for chapter in novel.chapters
-        ]
+            chapter_record.units = [
+                TranslationUnit(
+                    unit_index=unit.unit_index,
+                    source_order=unit.source_order,
+                    source_text=unit.source_text,
+                    token_count=unit.token_count,
+                )
+                for unit in chunk_text(chapter.text)
+            ]
+            record.chapters.append(chapter_record)
         self._session.add(record)
         await self._session.commit()
         return str(record.id)
