@@ -1,0 +1,38 @@
+import asyncio
+from typing import Protocol
+
+from minio import Minio
+
+from src.core.config import Settings
+
+
+class ObjectStorage(Protocol):
+    async def put(self, key: str, data: bytes, content_type: str) -> str: ...
+
+
+class MinioStorage:
+    def __init__(self, settings: Settings) -> None:
+        self._settings = settings
+
+    async def put(self, key: str, data: bytes, content_type: str) -> str:
+        def upload() -> str:
+            from io import BytesIO
+
+            client = Minio(
+                self._settings.minio_endpoint,
+                self._settings.minio_access_key,
+                self._settings.minio_secret_key.get_secret_value(),
+                secure=self._settings.minio_secure,
+            )
+            if not client.bucket_exists(self._settings.minio_bucket):
+                client.make_bucket(self._settings.minio_bucket)
+            client.put_object(
+                self._settings.minio_bucket,
+                key,
+                BytesIO(data),
+                len(data),
+                content_type=content_type,
+            )
+            return f"s3://{self._settings.minio_bucket}/{key}"
+
+        return await asyncio.to_thread(upload)

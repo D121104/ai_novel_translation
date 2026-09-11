@@ -20,6 +20,15 @@ curl http://localhost:8000/health
 curl http://localhost:8000/ready
 ```
 
+Import nhanh một file TXT/JSON/EPUB bằng raw request body:
+
+```bash
+curl --data-binary "@book.txt" "http://localhost:8000/imports?filename=book.txt"
+```
+
+File gốc được lưu trong MinIO; novel và chapter được lưu trong PostgreSQL.
+Import lại cùng nội dung sẽ trả cùng `novel_id` và `idempotent: true`.
+
 `/health` không phụ thuộc hạ tầng. `/ready` kiểm tra PostgreSQL, Neo4j,
 Qdrant, Redis và MinIO; nếu một dịch vụ tắt, endpoint trả HTTP 503 và nêu
 dịch vụ lỗi.
@@ -37,8 +46,8 @@ Các volume Docker là named volumes và không bị xóa bởi lệnh khởi đ
 
 ## Phạm vi hiện tại
 
-Phase 0 chỉ cung cấp skeleton, cấu hình, logging, health checks và local
-infrastructure. Domain novel, ingestion, LLM, retrieval, workers và UI sẽ
+Phase 1 bổ sung parser TXT/JSON/EPUB, phát hiện chapter, lưu file gốc vào
+MinIO và lưu Novel/Chapter vào PostgreSQL. LLM, retrieval, workers và UI sẽ
 được triển khai ở các phase sau.
 
 ## Kilo project configuration
