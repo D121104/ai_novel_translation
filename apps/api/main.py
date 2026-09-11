@@ -1,11 +1,15 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
+from uuid import UUID
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
+from sqlalchemy import func, select
 
+from apps.api.schemas import ChapterResponse, NovelResponse, Paginated
 from src.core.config import get_settings
 from src.core.logging import configure_logging
+from src.domain.novel.models import Chapter, Novel
 from src.infrastructure.health import check_dependencies
 from src.infrastructure.minio.health import check as minio_check
 from src.infrastructure.neo4j.health import check as neo4j_check
@@ -69,5 +73,64 @@ async def import_novel(request: Request, filename: str = "novel.txt") -> dict[st
                 PostgresNovelRepository(session), MinioStorage(settings)
             ).import_file(filename, data)
         return report.__dict__
+    finally:
+        await engine.dispose()
+
+
+@app.get("/api/v1/novels", response_model=Paginated[NovelResponse], tags=["novels"])
+async def list_novels(
+    offset: int = Query(0, ge=0), limit: int = Query(20, ge=1, le=100)
+) -> Paginated[NovelResponse]:
+    engine, sessions = session_factory(get_settings())
+    try:
+        async with sessions() as session:
+            total = int(await session.scalar(select(func.count()).select_from(Novel)) or 0)
+            records = (
+                await session.scalars(
+                    select(Novel).order_by(Novel.created_at).offset(offset).limit(limit)
+                )
+            ).all()
+            return Paginated(
+                items=[
+                    NovelResponse.model_validate(record, from_attributes=True) for record in records
+                ],
+                offset=offset,
+                limit=limit,
+                total=total,
+            )
+    finally:
+        await engine.dispose()
+
+
+@app.get(
+    "/api/v1/novels/{novel_id}/chapters",
+    response_model=Paginated[ChapterResponse],
+    tags=["chapters"],
+)
+async def list_chapters(
+    novel_id: UUID, offset: int = Query(0, ge=0), limit: int = Query(20, ge=1, le=100)
+) -> Paginated[ChapterResponse]:
+    engine, sessions = session_factory(get_settings())
+    try:
+        async with sessions() as session:
+            query = (
+                select(Chapter).where(Chapter.novel_id == novel_id).order_by(Chapter.chapter_index)
+            )
+            total = int(
+                await session.scalar(
+                    select(func.count()).select_from(Chapter).where(Chapter.novel_id == novel_id)
+                )
+                or 0
+            )
+            records = (await session.scalars(query.offset(offset).limit(limit))).all()
+            return Paginated(
+                items=[
+                    ChapterResponse.model_validate(record, from_attributes=True)
+                    for record in records
+                ],
+                offset=offset,
+                limit=limit,
+                total=total,
+            )
     finally:
         await engine.dispose()

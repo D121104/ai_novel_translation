@@ -69,6 +69,8 @@ MinIO và lưu Novel/Chapter vào PostgreSQL. Phase 2 bổ sung chunking
  glossary, markup và length anomaly, cùng repair loop có history.
  Phase 12 bổ sung Celery/Redis configuration và resumable worker với checkpoint,
  retry và idempotency key.
+ Phase 13 bổ sung API versioned `/api/v1/novels` và chapter pagination với
+ Pydantic response validation, cùng endpoint import hiện có.
 
 ## Kilo project configuration
 
