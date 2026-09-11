@@ -86,6 +86,8 @@ MinIO và lưu Novel/Chapter vào PostgreSQL. Phase 2 bổ sung chunking
  browsing.
  Phase 15 bổ sung knowledge review actions (confirm/reject/merge/split/lock)
  và audit log PostgreSQL cho mọi thay đổi review.
+ Phase 16 bổ sung dependency index cho entity/fact/glossary/memory và stale
+ planning chỉ nhắm tới các TranslationUnit bị ảnh hưởng.
 
 ## Kilo project configuration
 
