@@ -55,7 +55,8 @@ MinIO và lưu Novel/Chapter vào PostgreSQL. Phase 2 bổ sung chunking
  TranslationUnit; extractor chỉ trả proposal, không ghi DB. Retrieval, workers
  và UI sẽ được triển khai ở các phase sau. Phase 5 bổ sung entity resolution
  theo exact alias, normalized/fuzzy matching và ngưỡng an toàn, không tự merge
- candidate confidence thấp hoặc ambiguous.
+ candidate confidence thấp hoặc ambiguous. Phase 6 bổ sung Neo4j temporal graph
+ synchronization và truy vấn relationship có `as_of_order`, chặn future state.
 
 ## Kilo project configuration
 
