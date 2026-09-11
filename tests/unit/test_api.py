@@ -1,3 +1,6 @@
+import asyncio
+from datetime import UTC, datetime
+
 from fastapi.testclient import TestClient
 
 from apps.api.main import app
@@ -183,3 +186,63 @@ def test_delete_novel_endpoint_deletes_record(monkeypatch) -> None:
         response = client.delete(f"/api/v1/novels/{novel_id}")
     assert response.status_code == 200
     assert response.json()["status"] == "deleted"
+
+
+def test_cancel_translation_job_marks_running_job_cancelled(monkeypatch) -> None:
+    from uuid import uuid4
+
+    from apps.api.main import cancel_translation_job
+
+    job_id = uuid4()
+    chapter_id = uuid4()
+    job = type(
+        "Job",
+        (),
+        {
+            "id": job_id,
+            "chapter_id": chapter_id,
+            "pipeline_version": "1",
+            "status": "running",
+            "current_unit_id": uuid4(),
+            "processed": 2,
+            "failed": 0,
+            "retry_count": 0,
+            "last_error": None,
+            "created_at": datetime.now(UTC),
+            "updated_at": datetime.now(UTC),
+            "lease_until": datetime.now(UTC),
+        },
+    )()
+
+    class Session:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args) -> None:
+            pass
+
+        async def get(self, _model, value):
+            assert value == job_id
+            return job
+
+        async def commit(self) -> None:
+            pass
+
+    class Engine:
+        async def dispose(self) -> None:
+            pass
+
+    monkeypatch.setattr(
+        "apps.api.main.session_factory", lambda _settings: (Engine(), lambda: Session())
+    )
+
+    async def fake_create_schema(_engine):
+        pass
+
+    monkeypatch.setattr("apps.api.main.create_schema", fake_create_schema)
+
+    response = asyncio.run(cancel_translation_job(job_id))
+
+    assert response.status == "cancelled"
+    assert response.current_unit_id is None
+    assert response.lease_until is None

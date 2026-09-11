@@ -90,6 +90,10 @@ class TranslationSemanticFailure(Exception):
         super().__init__("translation semantic QA failed")
 
 
+class TranslationCancelled(Exception):
+    """Signal a durable cancel request without marking the chapter as failed."""
+
+
 class TranslationService:
     """Run the smallest resumable, temporal-safe chapter translation workflow."""
 
@@ -190,6 +194,10 @@ class TranslationService:
                 report=exc.report,
                 processed=processed,
             ) from exc
+        except TranslationCancelled:
+            chapter.status = "paused"
+            await self._session.commit()
+            raise
         except Exception:
             chapter.status = "failed"
             await self._session.commit()
@@ -361,6 +369,10 @@ class TranslationService:
                     # PostgreSQL remains canonical; a memory outage must not turn
                     # an already committed translation into a failed unit.
                     logger.warning("translation memory indexing failed for unit %s", unit.id)
+        except TranslationCancelled:
+            unit.status = "pending"
+            await self._session.commit()
+            raise
         except Exception:
             unit.status = "failed"
             await self._session.commit()

@@ -1,9 +1,18 @@
+import sys
 from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import pytest
 
 from src.workers.resume import MemoryCheckpointStore, ResumableWorker
+
+
+def test_windows_worker_uses_solo_pool() -> None:
+    from src.workers.celery_app import celery_app
+
+    if sys.platform == "win32":
+        assert celery_app.conf.worker_pool == "solo"
+        assert celery_app.conf.worker_concurrency == 1
 
 
 @pytest.mark.asyncio
@@ -56,3 +65,26 @@ async def test_translation_job_updates_durable_status_and_progress(monkeypatch) 
         "current_unit_id": None,
         "lease_until": None,
     }
+
+
+@pytest.mark.asyncio
+async def test_translation_job_stops_without_retrying_when_cancelled(monkeypatch) -> None:
+    from src.workers import translation_task
+
+    job_id = uuid4()
+    chapter_id = uuid4()
+    updates: list[dict[str, object]] = []
+
+    async def set_job(_job_id, **values):
+        updates.append(values)
+
+    async def is_cancelled(_job_id, *, novel=False):
+        assert novel is False
+        return True
+
+    monkeypatch.setattr(translation_task, "_set_job", set_job)
+    monkeypatch.setattr(translation_task, "_is_job_cancelled", is_cancelled)
+
+    await translation_task.run_translation_job(job_id, chapter_id)
+
+    assert updates == [{"status": "cancelled", "current_unit_id": None, "lease_until": None}]

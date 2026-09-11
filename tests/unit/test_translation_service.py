@@ -6,7 +6,7 @@ from src.core.config import Settings
 from src.domain.novel.models import Chapter, Translation, TranslationQAResult, TranslationUnit
 from src.llm.provider import LLMResponse
 from src.translation.context import GlossaryTerm
-from src.translation.service import TranslationQAFailure, TranslationService
+from src.translation.service import TranslationCancelled, TranslationQAFailure, TranslationService
 
 
 class FakeProvider:
@@ -96,6 +96,38 @@ async def test_chapter_translation_processes_pending_units_and_repairs() -> None
     assert session.added[0].translated_text == "Lan có 12 kiếm."
     assert len(provider.prompts) == 2
     assert "swords => kiếm" in provider.prompts[1]
+
+
+@pytest.mark.asyncio
+async def test_cancellation_keeps_current_unit_pending_for_resume() -> None:
+    chapter_id = uuid4()
+    unit = TranslationUnit(
+        id=uuid4(),
+        chapter_id=chapter_id,
+        unit_index=0,
+        source_order=0,
+        source_text="A paragraph.",
+        token_count=2,
+        status="pending",
+    )
+    chapter = Chapter(
+        id=chapter_id, chapter_index=1, title="One", source_text="", source_text_path=""
+    )
+    chapter.units = [unit]
+
+    async def cancel(_unit_id) -> None:
+        raise TranslationCancelled()
+
+    with pytest.raises(TranslationCancelled):
+        await TranslationService(
+            FakeSession(chapter),
+            Settings(),
+            FailingProvider(),
+            on_unit_started=cancel,
+        ).translate_chapter(chapter_id)
+
+    assert chapter.status == "paused"
+    assert unit.status == "pending"
 
 
 @pytest.mark.asyncio

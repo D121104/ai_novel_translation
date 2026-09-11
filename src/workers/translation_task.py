@@ -11,7 +11,10 @@ from sqlalchemy import select
 from src.core.config import get_settings
 from src.domain.novel.models import Chapter, NovelTranslationJob, TranslationJob
 from src.infrastructure.postgres.repository import create_schema, session_factory
+from src.translation.service import TranslationCancelled
 from src.workers.celery_app import celery_app
+
+_CANCELLED_STATUSES = {"cancel_requested", "cancelled"}
 
 
 async def _set_job(job_id: UUID, **values: object) -> None:
@@ -22,6 +25,8 @@ async def _set_job(job_id: UUID, **values: object) -> None:
         async with sessions() as session:
             job = await session.get(TranslationJob, job_id)
             if job is not None:
+                if job.status in _CANCELLED_STATUSES and values.get("status") != "cancelled":
+                    return
                 for key, value in values.items():
                     setattr(job, key, value)
                 await session.commit()
@@ -37,9 +42,27 @@ async def _set_novel_job(job_id: UUID, **values: object) -> None:
         async with sessions() as session:
             job = await session.get(NovelTranslationJob, job_id)
             if job is not None:
+                if job.status in _CANCELLED_STATUSES and values.get("status") != "cancelled":
+                    return
                 for key, value in values.items():
                     setattr(job, key, value)
                 await session.commit()
+    finally:
+        await engine.dispose()
+
+
+async def _is_job_cancelled(job_id: UUID, *, novel: bool = False) -> bool:
+    settings = get_settings()
+    engine, sessions = session_factory(settings)
+    try:
+        await create_schema(engine)
+        async with sessions() as session:
+            record = (
+                await session.get(NovelTranslationJob, job_id)
+                if novel
+                else await session.get(TranslationJob, job_id)
+            )
+            return record is not None and record.status in _CANCELLED_STATUSES
     finally:
         await engine.dispose()
 
@@ -48,6 +71,9 @@ async def run_novel_translation_job(job_id: UUID, novel_id: UUID) -> None:
     from apps.api.main import _run_translation
 
     settings = get_settings()
+    if await _is_job_cancelled(job_id, novel=True):
+        await _set_novel_job(job_id, status="cancelled", lease_until=None)
+        return
     await _set_novel_job(
         job_id,
         status="running",
@@ -69,8 +95,10 @@ async def run_novel_translation_job(job_id: UUID, novel_id: UUID) -> None:
     processed_units = 0
     try:
         for chapter_id in chapter_ids:
+            if await _is_job_cancelled(job_id, novel=True):
+                raise TranslationCancelled()
             await _set_novel_job(job_id, current_chapter_id=chapter_id)
-            result = await _run_translation(chapter_id)
+            result = await _run_translation(chapter_id, novel_job_id=job_id)
             if result.status != "completed":
                 await _set_novel_job(job_id, status="failed", failed_chapters=1, lease_until=None)
                 return
@@ -81,6 +109,14 @@ async def run_novel_translation_job(job_id: UUID, novel_id: UUID) -> None:
                 processed_chapters=processed_chapters,
                 processed_units=processed_units,
             )
+    except TranslationCancelled:
+        await _set_novel_job(
+            job_id,
+            status="cancelled",
+            current_chapter_id=None,
+            lease_until=None,
+        )
+        return
     except Exception as exc:
         await _set_novel_job(job_id, status="failed", last_error=str(exc), lease_until=None)
         raise
@@ -104,6 +140,9 @@ async def run_translation_job(job_id: UUID, chapter_id: UUID, retry_failed: bool
     from apps.api.main import _run_translation
 
     settings = get_settings()
+    if await _is_job_cancelled(job_id):
+        await _set_job(job_id, status="cancelled", current_unit_id=None, lease_until=None)
+        return
     await _set_job(
         job_id,
         status="running",
@@ -112,6 +151,9 @@ async def run_translation_job(job_id: UUID, chapter_id: UUID, retry_failed: bool
     )
     try:
         result = await _run_translation(chapter_id, retry_failed=retry_failed, job_id=job_id)
+    except TranslationCancelled:
+        await _set_job(job_id, status="cancelled", current_unit_id=None, lease_until=None)
+        return
     except HTTPException as exc:
         detail: dict[str, Any] = exc.detail if isinstance(exc.detail, dict) else {}
         status = (

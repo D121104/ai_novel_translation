@@ -58,6 +58,7 @@ from src.summaries.builder import SummaryBuilder
 from src.summaries.store import PostgresSummaryStage
 from src.translation.context_builder import PostgresMetadataSource, RuntimeContextBuilder
 from src.translation.service import (
+    TranslationCancelled,
     TranslationOrderBlocked,
     TranslationQAFailure,
     TranslationSemanticFailure,
@@ -266,7 +267,11 @@ async def delete_novel(novel_id: UUID) -> dict[str, str]:
 
 
 async def _run_translation(
-    chapter_id: UUID, *, retry_failed: bool = False, job_id: UUID | None = None
+    chapter_id: UUID,
+    *,
+    retry_failed: bool = False,
+    job_id: UUID | None = None,
+    novel_job_id: UUID | None = None,
 ) -> TranslationRunResponse:
     settings = get_settings()
     engine, sessions = session_factory(settings)
@@ -285,15 +290,26 @@ async def _run_translation(
                 provider = create_provider(settings)
 
                 async def mark_unit_started(unit_id: UUID) -> None:
-                    if job_id is None:
-                        return
-                    job = await session.get(TranslationJob, job_id)
-                    if job is not None:
-                        job.current_unit_id = unit_id
-                        job.lease_until = datetime.now(UTC) + timedelta(
-                            minutes=settings.translation_lease_minutes
-                        )
-                        await session.commit()
+                    if job_id is not None:
+                        job = await session.get(TranslationJob, job_id)
+                        if job is not None:
+                            if job.status in {"cancel_requested", "cancelled"}:
+                                raise TranslationCancelled()
+                            job.current_unit_id = unit_id
+                            job.lease_until = datetime.now(UTC) + timedelta(
+                                minutes=settings.translation_lease_minutes
+                            )
+                            await session.commit()
+                    if novel_job_id is not None:
+                        novel_job = await session.get(NovelTranslationJob, novel_job_id)
+                        if novel_job is not None:
+                            if novel_job.status in {"cancel_requested", "cancelled"}:
+                                raise TranslationCancelled()
+                            novel_job.current_chapter_id = chapter_id
+                            novel_job.lease_until = datetime.now(UTC) + timedelta(
+                                minutes=settings.translation_lease_minutes
+                            )
+                            await session.commit()
 
                 service = TranslationService(
                     session,
@@ -452,6 +468,30 @@ async def get_translation_job(job_id: UUID) -> TranslationJobResponse:
 
 
 @app.post(
+    "/api/v1/jobs/{job_id}/cancel",
+    response_model=TranslationJobResponse,
+    tags=["jobs"],
+)
+async def cancel_translation_job(job_id: UUID) -> TranslationJobResponse:
+    settings = get_settings()
+    engine, sessions = session_factory(settings)
+    try:
+        await create_schema(engine)
+        async with sessions() as session:
+            job = await session.get(TranslationJob, job_id)
+            if job is None:
+                raise HTTPException(status_code=404, detail="job not found")
+            if job.status not in {"completed", "failed", "human_review", "cancelled"}:
+                job.status = "cancelled"
+                job.current_unit_id = None
+                job.lease_until = None
+                await session.commit()
+            return TranslationJobResponse.model_validate(job, from_attributes=True)
+    finally:
+        await engine.dispose()
+
+
+@app.post(
     "/api/v1/novels/{novel_id}/translation-jobs",
     response_model=NovelTranslationJobResponse,
     status_code=202,
@@ -520,6 +560,30 @@ async def get_novel_translation_job(job_id: UUID) -> NovelTranslationJobResponse
             job = await session.get(NovelTranslationJob, job_id)
             if job is None:
                 raise HTTPException(status_code=404, detail="novel translation job not found")
+            return NovelTranslationJobResponse.model_validate(job, from_attributes=True)
+    finally:
+        await engine.dispose()
+
+
+@app.post(
+    "/api/v1/novel-translation-jobs/{job_id}/cancel",
+    response_model=NovelTranslationJobResponse,
+    tags=["jobs"],
+)
+async def cancel_novel_translation_job(job_id: UUID) -> NovelTranslationJobResponse:
+    settings = get_settings()
+    engine, sessions = session_factory(settings)
+    try:
+        await create_schema(engine)
+        async with sessions() as session:
+            job = await session.get(NovelTranslationJob, job_id)
+            if job is None:
+                raise HTTPException(status_code=404, detail="novel translation job not found")
+            if job.status not in {"completed", "failed", "human_review", "cancelled"}:
+                job.status = "cancelled"
+                job.current_chapter_id = None
+                job.lease_until = None
+                await session.commit()
             return NovelTranslationJobResponse.model_validate(job, from_attributes=True)
     finally:
         await engine.dispose()

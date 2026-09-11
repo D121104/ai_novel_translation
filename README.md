@@ -161,6 +161,16 @@ Khi export EPUB từ EPUB gốc, hệ thống giữ nguyên archive assets và X
 của chapter đã có bản dịch. EPUB nguồn được đọc lại từ MinIO theo
 `source_text_path`.
 
+Trên Windows, Celery tự dùng `solo` với một worker để tránh lỗi `billiard`
+do process pool/spawn. Có thể chạy thủ công bằng:
+
+```powershell
+uv run celery -A src.workers.celery_app:celery_app worker --loglevel=INFO --pool=solo --concurrency=1
+```
+
+Job đang chạy có thể dừng bằng nút `Stop` hoặc `Stop all`. Worker sẽ dừng ở
+ranh giới unit hiện tại; unit chưa hoàn tất vẫn ở trạng thái `pending` để resume.
+
 ## Database initialization và migrations
 
 Mặc định, local API không tự khởi tạo toàn bộ infrastructure khi startup.
