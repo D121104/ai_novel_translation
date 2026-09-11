@@ -50,8 +50,10 @@ Phase 1 bổ sung parser TXT/JSON/EPUB, phát hiện chapter, lưu file gốc v�
 MinIO và lưu Novel/Chapter vào PostgreSQL. Phase 2 bổ sung chunking
  deterministic thành TranslationUnit theo paragraph/sentence boundary. Phase 3
  bổ sung abstraction LLM cho Ollama/OpenAI-compatible, structured output,
- retry/timeout, token accounting và response cache. Retrieval, workers và UI sẽ
- được triển khai ở các phase sau.
+ retry/timeout, token accounting và response cache. Phase 4 bổ sung knowledge
+ extraction candidates có Pydantic validation và evidence bắt buộc gắn với
+ TranslationUnit; extractor chỉ trả proposal, không ghi DB. Retrieval, workers
+ và UI sẽ được triển khai ở các phase sau.
 
 ## Kilo project configuration
 
