@@ -50,6 +50,7 @@ const API = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 const formatStatus = (status: string) => status.replaceAll("_", " ");
 const isTerminalJob = (status: string) =>
   ["completed", "failed", "human_review", "cancelled"].includes(status);
+const isRetryableChapter = (status: string) => ["failed", "human_review"].includes(status);
 
 export default function App() {
   const [novels, setNovels] = useState<Novel[]>([]);
@@ -90,8 +91,8 @@ export default function App() {
     );
   }, [libraryQuery, novels]);
 
-  const translatedChapterCount = chapters.filter((chapter) =>
-    ["translated", "completed"].includes(chapter.status),
+const translatedChapterCount = chapters.filter((chapter) =>
+    ["translated", "completed", "human_review"].includes(chapter.status),
   ).length;
 
   const chooseNovel = async (novel: Novel) => {
@@ -423,7 +424,7 @@ export default function App() {
                   <span className="chapter-number">{String(chapter.chapter_index).padStart(3, "0")}</span>
                   <button className="chapter-title" onClick={() => openChapter(chapter)}><strong>{chapter.title}</strong><small>Open reading view</small></button>
                   <span className={`status-chip ${chapter.status}`}>{formatStatus(chapter.status)}</span>
-                  <div className="chapter-actions">{chapterJob?.chapterId === chapter.id ? <button className="stop-button" onClick={cancelChapter}>Stop</button> : <><button disabled={translatingId !== null} onClick={() => translateChapter(chapter, chapter.status === "failed")}>{translatingId === chapter.id ? "Working" : chapter.status === "failed" ? "Retry" : "Translate"}</button><button className="queue-button" disabled={translatingId !== null} onClick={() => queueChapter(chapter)}>Queue</button></>}</div>
+                  <div className="chapter-actions">{chapterJob?.chapterId === chapter.id ? <button className="stop-button" onClick={cancelChapter}>Stop</button> : <><button disabled={translatingId !== null} onClick={() => translateChapter(chapter, isRetryableChapter(chapter.status))}>{translatingId === chapter.id ? "Working" : isRetryableChapter(chapter.status) ? "Retry" : "Translate"}</button><button className="queue-button" disabled={translatingId !== null} onClick={() => queueChapter(chapter)}>Queue</button></>}</div>
                 </div>)}
               </div>
               <div className="pagination"><button disabled={chapterPage === 0} onClick={() => loadChapterPage(selected.id, chapterPage - 1)}>← Previous</button><span>Page {chapterPage + 1} <i /> {Math.max(1, Math.ceil(chapterTotal / 20))}</span><button disabled={(chapterPage + 1) * 20 >= chapterTotal} onClick={() => loadChapterPage(selected.id, chapterPage + 1)}>Next →</button></div>

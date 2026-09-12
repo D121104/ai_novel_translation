@@ -59,6 +59,26 @@ uv sync
 docker compose up -d
 ```
 
+Để khởi động toàn bộ project bằng một lệnh:
+
+Windows PowerShell:
+
+```powershell
+.\scripts\start.ps1
+```
+
+Ubuntu:
+
+```bash
+chmod +x scripts/start.sh
+./scripts/start.sh
+```
+
+Hai script khởi động các container hạ tầng, API FastAPI, Celery worker và
+frontend Vite. Script Windows mở ba cửa sổ PowerShell; script Ubuntu hiển thị
+log chung và dừng các tiến trình con khi nhấn `Ctrl+C`. LLM gateway bên ngoài
+(nếu dùng) vẫn phải chạy riêng.
+
 Khởi động backend:
 
 ```powershell
@@ -106,6 +126,7 @@ LLM_PROVIDER=openai-compatible
 LLM_BASE_URL=https://<router-endpoint>
 LLM_API_KEY=<api-key>
 LLM_MODEL=<model-name>
+ENABLE_SEMANTIC_QA=true
 ```
 
 Provider gọi endpoint:
@@ -116,6 +137,8 @@ Provider gọi endpoint:
 
 Không commit `.env` hoặc API key. `LLM_BASE_URL` không nên chứa sẵn
 `/chat/completions`; kiểm tra router để tránh lặp `/v1`.
+Đặt `ENABLE_SEMANTIC_QA=false` nếu chỉ muốn chạy translation, repair và
+deterministic QA.
 
 ## API nhanh
 
@@ -152,9 +175,11 @@ lưu translation version và cập nhật trạng thái chapter. Endpoint hiện
 đồng bộ để phù hợp local workflow; Celery chỉ được dùng cho các job dài hạn
 đã cấu hình riêng.
 
-Nếu QA thất bại, API trả `422` cùng mã lỗi và danh sách issue (ví dụ
-`wrong_number`) thay vì lỗi server chung. Các unit đã hoàn thành được giữ lại;
-nhấn `Retry failed` hoặc gọi endpoint `retry-failed` để chạy lại unit lỗi.
+Nếu deterministic QA thất bại, API trả `422` cùng mã lỗi và danh sách issue (ví dụ
+`untranslated_cjk` hoặc `malformed_markup`) thay vì lỗi server chung. Semantic QA chỉ ghi nhận issue cần người
+dùng review; bản dịch vẫn được lưu và các unit tiếp theo vẫn chạy. Chapter có issue
+semantic sẽ ở trạng thái `human_review`; nhấn `Retry` hoặc gọi endpoint `retry-failed`
+để chạy lại thủ công.
 
 Khi export EPUB từ EPUB gốc, hệ thống giữ nguyên archive assets và XHTML
 (bao gồm ảnh, CSS, font, cover, style và vị trí tuyệt đối), chỉ thay text node
@@ -170,6 +195,8 @@ uv run celery -A src.workers.celery_app:celery_app worker --loglevel=INFO --pool
 
 Job đang chạy có thể dừng bằng nút `Stop` hoặc `Stop all`. Worker sẽ dừng ở
 ranh giới unit hiện tại; unit chưa hoàn tất vẫn ở trạng thái `pending` để resume.
+Novel jobs cũng retry các unit đã lỗi khi resume; nếu một chapter vẫn trả trạng thái
+`failed`, nguyên nhân được lưu trong trường `last_error` của novel job.
 
 ## Database initialization và migrations
 

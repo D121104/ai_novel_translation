@@ -5,6 +5,7 @@ import pytest
 from src.core.config import Settings
 from src.domain.novel.models import Chapter, Translation, TranslationQAResult, TranslationUnit
 from src.llm.provider import LLMResponse
+from src.qa.semantic import SemanticQAIssue, SemanticQAReport
 from src.translation.context import GlossaryTerm
 from src.translation.service import TranslationCancelled, TranslationQAFailure, TranslationService
 
@@ -24,12 +25,20 @@ class FakeProvider:
 
 class FailingProvider:
     async def generate(self, prompt: str, *, system: str | None = None) -> LLMResponse:
+        if "Lan has 12 swords." in prompt:
+            return LLMResponse("", "fake-model", 1, 0)
         return LLMResponse("not a translation", "fake-model", 1, 3)
 
 
 class ErrorProvider:
     async def generate(self, prompt: str, *, system: str | None = None) -> LLMResponse:
         raise RuntimeError("provider unavailable")
+
+
+class GoodProvider:
+    async def generate(self, prompt: str, *, system: str | None = None) -> LLMResponse:
+        text = "Later." if "Later." in prompt else "Lan enters."
+        return LLMResponse(text, "fake-model", 1, 2)
 
 
 class RetryProvider:
@@ -47,6 +56,7 @@ class FakeSession:
     def __init__(self, chapter: Chapter) -> None:
         self.chapter = chapter
         self.added: list[Translation] = []
+        self.qa_results: list[TranslationQAResult] = []
         self.commits = 0
 
     async def scalar(self, _query):
@@ -57,6 +67,8 @@ class FakeSession:
             self.added.append(value)
             value.unit = next(unit for unit in self.chapter.units if unit.id == value.unit_id)
             value.unit.translations.append(value)
+        else:
+            self.qa_results.append(value)
 
     async def commit(self) -> None:
         self.commits += 1
@@ -128,6 +140,114 @@ async def test_cancellation_keeps_current_unit_pending_for_resume() -> None:
 
     assert chapter.status == "paused"
     assert unit.status == "pending"
+
+
+@pytest.mark.asyncio
+async def test_knowledge_extraction_failure_does_not_block_translation(caplog) -> None:
+    chapter_id = uuid4()
+    unit = TranslationUnit(
+        id=uuid4(),
+        chapter_id=chapter_id,
+        unit_index=0,
+        source_order=0,
+        source_text="Lan enters.",
+        token_count=2,
+        status="pending",
+    )
+    chapter = Chapter(
+        id=chapter_id, chapter_index=1, title="One", source_text="", source_text_path=""
+    )
+    chapter.units = [unit]
+
+    class FailingKnowledgeStage:
+        async def prepare_unit(self, **_kwargs) -> None:
+            raise TimeoutError("extraction timed out")
+
+    session = FakeSession(chapter)
+    result = await TranslationService(
+        session,
+        Settings(),
+        GoodProvider(),
+        knowledge_stage=FailingKnowledgeStage(),
+    ).translate_chapter(chapter_id)
+
+    assert result.status == "completed"
+    assert unit.status == "completed"
+    assert session.added[0].translated_text == "Lan enters."
+    assert "knowledge extraction failed; continuing translation" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_semantic_review_keeps_translation_and_allows_later_units() -> None:
+    chapter_id = uuid4()
+    reviewed = TranslationUnit(
+        id=uuid4(),
+        chapter_id=chapter_id,
+        unit_index=0,
+        source_order=0,
+        source_text="Lan enters.",
+        token_count=2,
+        status="pending",
+    )
+    later = TranslationUnit(
+        id=uuid4(),
+        chapter_id=chapter_id,
+        unit_index=1,
+        source_order=1,
+        source_text="Later.",
+        token_count=1,
+        status="pending",
+    )
+    chapter = Chapter(
+        id=chapter_id, chapter_index=1, title="One", source_text="", source_text_path=""
+    )
+    chapter.units = [reviewed, later]
+
+    class SemanticReviewer:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def run(self, _source, _translation, _context) -> SemanticQAReport:
+            self.calls += 1
+            if self.calls == 1:
+                return SemanticQAReport(
+                    passed=False,
+                    score=0.94,
+                    issues=[SemanticQAIssue(code="TERM_001", message="needs human review")],
+                )
+            return SemanticQAReport(passed=True, score=1.0)
+
+    session = FakeSession(chapter)
+    semantic_qa = SemanticReviewer()
+    first = await TranslationService(
+        session,
+        Settings(),
+        GoodProvider(),
+        repair_attempts=0,
+        semantic_qa=semantic_qa,
+    ).translate_chapter(chapter_id)
+
+    assert first.status == "human_review"
+    assert first.processed == 2
+    assert reviewed.status == "human_review"
+    assert later.status == "completed"
+    assert [item.translated_text for item in session.added] == ["Lan enters.", "Later."]
+    assert any(
+        result.stage == "semantic" and result.status == "human_review"
+        for result in session.qa_results
+    )
+
+    second = await TranslationService(
+        session,
+        Settings(),
+        GoodProvider(),
+        repair_attempts=0,
+        semantic_qa=semantic_qa,
+    ).translate_chapter(chapter_id, retry_failed=True)
+
+    assert second.status == "completed"
+    assert reviewed.status == "completed"
+    assert sorted({item.version for item in reviewed.translations}) == [1, 2]
 
 
 @pytest.mark.asyncio
@@ -219,7 +339,7 @@ async def test_qa_failure_preserves_completed_units_and_leaves_later_pending() -
         ).translate_chapter(chapter_id)
 
     assert caught.value.processed == 1
-    assert "wrong_number" in {issue.code for issue in caught.value.report.issues}
+    assert "empty" in {issue.code for issue in caught.value.report.issues}
     assert first.status == "completed"
     assert failed.status == "failed"
     assert later.status == "pending"

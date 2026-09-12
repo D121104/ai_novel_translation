@@ -25,6 +25,8 @@ from src.translation.prompts import PromptBuilder
 
 logger = logging.getLogger(__name__)
 
+_UNIT_TERMINAL_STATUSES = {"completed", "human_review"}
+
 
 class TranslationMemorySink(Protocol):
     async def save_translation(
@@ -130,23 +132,39 @@ class TranslationService:
         self._summary_stage = summary_stage
 
     async def translate_chapter(
-        self, chapter_id: UUID, *, retry_failed: bool = False
+        self,
+        chapter_id: UUID,
+        *,
+        retry_failed: bool = False,
+        recover_translating: bool = False,
     ) -> ChapterTranslationResult:
         lock = self._chapter_locks.setdefault(chapter_id, asyncio.Lock())
         async with lock:
-            return await self._translate_chapter(chapter_id, retry_failed=retry_failed)
+            return await self._translate_chapter(
+                chapter_id,
+                retry_failed=retry_failed,
+                recover_translating=recover_translating,
+            )
 
     async def _translate_chapter(
-        self, chapter_id: UUID, *, retry_failed: bool = False
+        self,
+        chapter_id: UUID,
+        *,
+        retry_failed: bool = False,
+        recover_translating: bool = False,
     ) -> ChapterTranslationResult:
         chapter = await self._load_chapter(chapter_id)
         if chapter is None:
             raise LookupError("chapter not found")
 
+        retryable: set[str] = set()
         if retry_failed:
-            for unit in chapter.units:
-                if unit.status in {"failed", "translating"}:
-                    unit.status = "pending"
+            retryable.update({"failed", "human_review"})
+        if recover_translating:
+            retryable.add("translating")
+        for unit in chapter.units:
+            if unit.status in retryable:
+                unit.status = "pending"
 
         pending = sorted(
             (unit for unit in chapter.units if unit.status == "pending"),
@@ -158,7 +176,7 @@ class TranslationService:
         try:
             for unit in pending:
                 if any(
-                    earlier.status != "completed"
+                    earlier.status not in _UNIT_TERMINAL_STATUSES
                     for earlier in chapter.units
                     if (earlier.source_order, earlier.unit_index)
                     < (unit.source_order, unit.unit_index)
@@ -166,14 +184,25 @@ class TranslationService:
                     raise TranslationOrderBlocked(unit_id=unit.id, unit_index=unit.unit_index)
                 await self._translate_unit(chapter, unit)
                 processed += 1
-            chapter.status = (
-                "completed"
-                if all(unit.status == "completed" for unit in chapter.units)
-                else "failed"
-            )
+            if any(unit.status == "failed" for unit in chapter.units):
+                chapter.status = "failed"
+            elif any(unit.status == "human_review" for unit in chapter.units):
+                chapter.status = "human_review"
+            else:
+                chapter.status = "completed"
             await self._session.commit()
-            if chapter.status == "completed" and self._summary_stage is not None:
-                await self._summary_stage.finalize(chapter)
+            if chapter.status in _UNIT_TERMINAL_STATUSES and self._summary_stage is not None:
+                chapter_needs_review = chapter.status == "human_review"
+                try:
+                    await self._summary_stage.finalize(chapter)
+                except Exception:
+                    if not chapter_needs_review:
+                        raise
+                    logger.warning(
+                        "summary finalization failed for human-review chapter %s",
+                        chapter.id,
+                        exc_info=True,
+                    )
         except TranslationQAFailure as exc:
             chapter.status = "failed"
             await self._session.commit()
@@ -239,13 +268,23 @@ class TranslationService:
             if self._on_unit_started is not None:
                 await self._on_unit_started(unit.id)
             if self._knowledge_stage is not None:
-                await self._knowledge_stage.prepare_unit(
-                    novel_id=chapter.novel_id,
-                    chapter_id=chapter.id,
-                    unit_id=unit.id,
-                    source_order=unit.source_order,
-                    source_text=unit.source_text,
-                )
+                try:
+                    await self._knowledge_stage.prepare_unit(
+                        novel_id=chapter.novel_id,
+                        chapter_id=chapter.id,
+                        unit_id=unit.id,
+                        source_order=unit.source_order,
+                        source_text=unit.source_text,
+                    )
+                except Exception:
+                    logger.warning(
+                        "knowledge extraction failed; continuing translation "
+                        "(chapter_id=%s, unit_id=%s, source_order=%s)",
+                        chapter.id,
+                        unit.id,
+                        unit.source_order,
+                        exc_info=True,
+                    )
             if self._context_builder is None:
                 context = TranslationContext(
                     source=unit.source_text,
@@ -313,12 +352,6 @@ class TranslationService:
                             model=response.model,
                         )
                     )
-                    raise TranslationSemanticFailure(
-                        chapter_id=chapter.id,
-                        unit_id=unit.id,
-                        unit_index=unit.unit_index,
-                        report=semantic_report,
-                    )
             self._session.add(
                 TranslationQAResult(
                     unit_id=unit.id,
@@ -331,7 +364,7 @@ class TranslationService:
                     model=response.model,
                 )
             )
-            if semantic_report is not None:
+            if semantic_report is not None and semantic_report.passed:
                 self._session.add(
                     TranslationQAResult(
                         unit_id=unit.id,
@@ -352,7 +385,9 @@ class TranslationService:
                     model=response.model,
                 )
             )
-            unit.status = "completed"
+            unit.status = (
+                "human_review" if semantic_report and not semantic_report.passed else "completed"
+            )
             await self._session.commit()
             if self._memory_sink is not None:
                 try:

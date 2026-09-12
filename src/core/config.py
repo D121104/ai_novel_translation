@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     llm_timeout_seconds: float = 120.0
     llm_max_retries: int = 2
     llm_max_output_tokens: int = 4000
+    enable_semantic_qa: bool = True
     celery_broker_url: str = "redis://localhost:6379/0"
     celery_result_backend: str = "redis://localhost:6379/1"
     translation_lease_minutes: int = 30

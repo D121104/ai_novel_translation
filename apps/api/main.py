@@ -270,6 +270,7 @@ async def _run_translation(
     chapter_id: UUID,
     *,
     retry_failed: bool = False,
+    recover_translating: bool = False,
     job_id: UUID | None = None,
     novel_job_id: UUID | None = None,
 ) -> TranslationRunResponse:
@@ -320,14 +321,21 @@ async def _run_translation(
                     knowledge_stage=PostgresKnowledgeStage(
                         session, KnowledgeExtractor(provider), graph
                     ),
-                    semantic_qa=SemanticQA(provider),
+                    semantic_qa=SemanticQA(provider) if settings.enable_semantic_qa else None,
                     on_unit_started=mark_unit_started,
                     summary_stage=PostgresSummaryStage(session, SummaryBuilder(provider), memory),
                 )
                 if retry_failed:
-                    result = await service.translate_chapter(chapter_id, retry_failed=True)
+                    result = await service.translate_chapter(
+                        chapter_id,
+                        retry_failed=True,
+                        recover_translating=recover_translating,
+                    )
                 else:
-                    result = await service.translate_chapter(chapter_id)
+                    result = await service.translate_chapter(
+                        chapter_id,
+                        recover_translating=recover_translating,
+                    )
             except LookupError as exc:
                 raise HTTPException(status_code=404, detail=str(exc)) from exc
             except TranslationQAFailure as exc:
@@ -486,6 +494,7 @@ async def cancel_translation_job(job_id: UUID) -> TranslationJobResponse:
                 job.current_unit_id = None
                 job.lease_until = None
                 await session.commit()
+                await session.refresh(job)
             return TranslationJobResponse.model_validate(job, from_attributes=True)
     finally:
         await engine.dispose()
@@ -584,6 +593,7 @@ async def cancel_novel_translation_job(job_id: UUID) -> NovelTranslationJobRespo
                 job.current_chapter_id = None
                 job.lease_until = None
                 await session.commit()
+                await session.refresh(job)
             return NovelTranslationJobResponse.model_validate(job, from_attributes=True)
     finally:
         await engine.dispose()

@@ -56,7 +56,7 @@ def test_start_translation_endpoint_uses_fake_provider(monkeypatch) -> None:
         def __init__(self, _session, _settings, **_kwargs) -> None:
             pass
 
-        async def translate_chapter(self, value):
+        async def translate_chapter(self, value, **_kwargs):
             assert value == chapter_id
             return SimpleNamespace(chapter_id=value, processed=1, failed=0, status="completed")
 
@@ -112,12 +112,20 @@ def test_translate_endpoint_returns_structured_422_for_qa_failure(monkeypatch) -
         def __init__(self, _session, _settings, **_kwargs) -> None:
             pass
 
-        async def translate_chapter(self, value):
+        async def translate_chapter(self, value, **_kwargs):
             raise TranslationQAFailure(
                 chapter_id=value,
                 unit_id=unit_id,
                 unit_index=4,
-                report=QAReport((QAIssue("wrong_number", "numeric values changed"),), 0.85),
+                report=QAReport(
+                    (
+                        QAIssue(
+                            "wrong_number",
+                            "numeric values changed (expected: 12; actual: 13)",
+                        ),
+                    ),
+                    0.85,
+                ),
                 processed=3,
             )
 
@@ -145,7 +153,11 @@ def test_translate_endpoint_returns_structured_422_for_qa_failure(monkeypatch) -
         "failed": 1,
         "status": "failed",
         "issues": [
-            {"code": "wrong_number", "message": "numeric values changed", "severity": "error"}
+            {
+                "code": "wrong_number",
+                "message": "numeric values changed (expected: 12; actual: 13)",
+                "severity": "error",
+            }
         ],
     }
 
@@ -213,6 +225,7 @@ def test_cancel_translation_job_marks_running_job_cancelled(monkeypatch) -> None
             "lease_until": datetime.now(UTC),
         },
     )()
+    events: list[str] = []
 
     class Session:
         async def __aenter__(self):
@@ -226,7 +239,11 @@ def test_cancel_translation_job_marks_running_job_cancelled(monkeypatch) -> None
             return job
 
         async def commit(self) -> None:
-            pass
+            events.append("commit")
+
+        async def refresh(self, value) -> None:
+            assert value is job
+            events.append("refresh")
 
     class Engine:
         async def dispose(self) -> None:
@@ -246,3 +263,71 @@ def test_cancel_translation_job_marks_running_job_cancelled(monkeypatch) -> None
     assert response.status == "cancelled"
     assert response.current_unit_id is None
     assert response.lease_until is None
+    assert events == ["commit", "refresh"]
+
+
+def test_cancel_novel_translation_job_refreshes_after_commit(monkeypatch) -> None:
+    from uuid import uuid4
+
+    from apps.api.main import cancel_novel_translation_job
+
+    job_id = uuid4()
+    novel_id = uuid4()
+    job = type(
+        "Job",
+        (),
+        {
+            "id": job_id,
+            "novel_id": novel_id,
+            "status": "running",
+            "current_chapter_id": uuid4(),
+            "total_chapters": 4,
+            "processed_chapters": 1,
+            "total_units": 10,
+            "processed_units": 3,
+            "failed_chapters": 0,
+            "last_error": None,
+            "lease_until": datetime.now(UTC),
+            "created_at": datetime.now(UTC),
+            "updated_at": datetime.now(UTC),
+        },
+    )()
+    events: list[str] = []
+
+    class Session:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args) -> None:
+            pass
+
+        async def get(self, _model, value):
+            assert value == job_id
+            return job
+
+        async def commit(self) -> None:
+            events.append("commit")
+
+        async def refresh(self, value) -> None:
+            assert value is job
+            events.append("refresh")
+
+    class Engine:
+        async def dispose(self) -> None:
+            pass
+
+    monkeypatch.setattr(
+        "apps.api.main.session_factory", lambda _settings: (Engine(), lambda: Session())
+    )
+
+    async def fake_create_schema(_engine):
+        pass
+
+    monkeypatch.setattr("apps.api.main.create_schema", fake_create_schema)
+
+    response = asyncio.run(cancel_novel_translation_job(job_id))
+
+    assert response.status == "cancelled"
+    assert response.current_chapter_id is None
+    assert response.lease_until is None
+    assert events == ["commit", "refresh"]

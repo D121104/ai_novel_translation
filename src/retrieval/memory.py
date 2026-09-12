@@ -3,6 +3,7 @@ import re
 from collections import Counter
 from dataclasses import dataclass
 from typing import Any, Protocol
+from uuid import NAMESPACE_URL, uuid5
 
 from qdrant_client import AsyncQdrantClient, models
 
@@ -48,6 +49,11 @@ class MemoryPoint:
 
 def sparse_terms(text: str) -> dict[str, int]:
     return dict(Counter(re.findall(r"\w+", text.casefold())))
+
+
+def qdrant_point_id(logical_id: str) -> str:
+    """Convert an internal memory ID into a deterministic Qdrant UUID."""
+    return str(uuid5(NAMESPACE_URL, f"novel-translator:{logical_id}"))
 
 
 def hybrid_fusion(
@@ -99,10 +105,11 @@ class QdrantMemory:
             collection,
             [
                 models.PointStruct(
-                    id=point.point_id,
+                    id=qdrant_point_id(point.point_id),
                     vector=vector,
                     payload={
                         **point.payload,
+                        "memory_point_id": point.point_id,
                         "text": point.text,
                         "observed_at_order": point.story_order,
                         "sparse": sparse_terms(point.text),
@@ -206,7 +213,7 @@ class QdrantMemory:
         for point in result.points:
             payload = dict(point.payload or {})
             memory_point = MemoryPoint(
-                str(point.id),
+                str(payload.get("memory_point_id", point.id)),
                 str(payload.get("text", "")),
                 int(payload["observed_at_order"]),
                 payload,

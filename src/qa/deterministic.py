@@ -1,14 +1,52 @@
 import re
 from dataclasses import dataclass
+from html.parser import HTMLParser
 
 from src.translation.context import GlossaryTerm
 
-_NUMBER_PATTERN = re.compile(r"\d+(?:[.,]\d+)?")
+_UNCLOSED_TAG_PATTERN = re.compile(r"</?[A-Za-z][^>]*$")
+_VOID_TAGS = {
+    "area",
+    "base",
+    "br",
+    "col",
+    "embed",
+    "hr",
+    "img",
+    "input",
+    "link",
+    "meta",
+    "source",
+    "track",
+    "wbr",
+}
 
 
-def extract_numeric_values(text: str) -> tuple[str, ...]:
-    """Return numeric values in source order, preserving duplicate values."""
-    return tuple(_NUMBER_PATTERN.findall(text))
+class _MarkupBalanceParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=False)
+        self.open_tags: list[str] = []
+        self.malformed = False
+
+    def handle_starttag(self, tag: str, _attrs: list[tuple[str, str | None]]) -> None:
+        if tag not in _VOID_TAGS:
+            self.open_tags.append(tag)
+
+    def handle_startendtag(self, _tag: str, _attrs: list[tuple[str, str | None]]) -> None:
+        return
+
+    def handle_endtag(self, tag: str) -> None:
+        if not self.open_tags or self.open_tags[-1] != tag:
+            self.malformed = True
+            return
+        self.open_tags.pop()
+
+
+def _has_malformed_markup(text: str) -> bool:
+    parser = _MarkupBalanceParser()
+    parser.feed(text)
+    parser.close()
+    return parser.malformed or bool(parser.open_tags) or bool(_UNCLOSED_TAG_PATTERN.search(text))
 
 
 @dataclass(frozen=True)
@@ -42,10 +80,6 @@ def deterministic_qa(
     translation_paragraphs = [part for part in translation.split("\n\n") if part.strip()]
     if len(translation_paragraphs) < len(source_paragraphs):
         issues.append(QAIssue("missing_paragraph", "translation has fewer paragraphs"))
-    source_numbers = extract_numeric_values(source)
-    translation_numbers = extract_numeric_values(translation)
-    if sorted(source_numbers) != sorted(translation_numbers):
-        issues.append(QAIssue("wrong_number", "numeric values changed"))
     for name in names:
         if name in source and name not in translation:
             issues.append(QAIssue("wrong_name", f"proper name missing: {name}"))
@@ -56,7 +90,7 @@ def deterministic_qa(
         issues.append(
             QAIssue("untranslated_cjk", "translation contains an untranslated CJK segment")
         )
-    if re.search(r"<[^>]*$|^[^<]*>", translation):
+    if _has_malformed_markup(translation):
         issues.append(QAIssue("malformed_markup", "unbalanced markup"))
     if source.strip() and len(translation) > max(len(source) * 5, 1000):
         issues.append(QAIssue("length_anomaly", "translation is unusually long"))

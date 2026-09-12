@@ -77,6 +77,7 @@ async def run_novel_translation_job(job_id: UUID, novel_id: UUID) -> None:
     await _set_novel_job(
         job_id,
         status="running",
+        last_error=None,
         lease_until=datetime.now(UTC) + timedelta(minutes=settings.translation_lease_minutes),
     )
     engine, sessions = session_factory(settings)
@@ -93,15 +94,32 @@ async def run_novel_translation_job(job_id: UUID, novel_id: UUID) -> None:
         await engine.dispose()
     processed_chapters = 0
     processed_units = 0
+    needs_human_review = False
     try:
         for chapter_id in chapter_ids:
             if await _is_job_cancelled(job_id, novel=True):
                 raise TranslationCancelled()
             await _set_novel_job(job_id, current_chapter_id=chapter_id)
-            result = await _run_translation(chapter_id, novel_job_id=job_id)
-            if result.status != "completed":
-                await _set_novel_job(job_id, status="failed", failed_chapters=1, lease_until=None)
+            result = await _run_translation(
+                chapter_id,
+                retry_failed=True,
+                recover_translating=True,
+                novel_job_id=job_id,
+            )
+            if result.status not in {"completed", "human_review"}:
+                await _set_novel_job(
+                    job_id,
+                    status="failed",
+                    failed_chapters=1,
+                    last_error=(
+                        f"chapter translation returned status={result.status}; "
+                        f"chapter_id={chapter_id}; processed={result.processed}; "
+                        f"failed={result.failed}"
+                    ),
+                    lease_until=None,
+                )
                 return
+            needs_human_review = needs_human_review or result.status == "human_review"
             processed_chapters += 1
             processed_units += result.processed
             await _set_novel_job(
@@ -117,12 +135,27 @@ async def run_novel_translation_job(job_id: UUID, novel_id: UUID) -> None:
             lease_until=None,
         )
         return
+    except HTTPException as exc:
+        detail: dict[str, Any] = exc.detail if isinstance(exc.detail, dict) else {}
+        status = (
+            "human_review" if detail.get("code") == "translation_semantic_qa_failed" else "failed"
+        )
+        await _set_novel_job(
+            job_id,
+            status=status,
+            processed_chapters=processed_chapters,
+            processed_units=processed_units,
+            failed_chapters=1 if status == "failed" else 0,
+            last_error=str(detail or exc),
+            lease_until=None,
+        )
+        return
     except Exception as exc:
         await _set_novel_job(job_id, status="failed", last_error=str(exc), lease_until=None)
         raise
     await _set_novel_job(
         job_id,
-        status="completed",
+        status="human_review" if needs_human_review else "completed",
         current_chapter_id=None,
         lease_until=None,
     )
@@ -150,7 +183,12 @@ async def run_translation_job(job_id: UUID, chapter_id: UUID, retry_failed: bool
         lease_until=datetime.now(UTC) + timedelta(minutes=settings.translation_lease_minutes),
     )
     try:
-        result = await _run_translation(chapter_id, retry_failed=retry_failed, job_id=job_id)
+        result = await _run_translation(
+            chapter_id,
+            retry_failed=retry_failed,
+            recover_translating=True,
+            job_id=job_id,
+        )
     except TranslationCancelled:
         await _set_job(job_id, status="cancelled", current_unit_id=None, lease_until=None)
         return
